@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy · Health Atlas</title>
+<meta name="description" content="How Health Atlas keeps your health data on your device.">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/dashboard.css">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<header class="lbar">
+  <a class="brandmark" href="./"><img src="assets/icon.svg" alt="" width="28" height="28"><b>Health Atlas</b></a>
+  <a class="lnk" href="./">Open the app</a>
+</header>
+<main class="doc">
+  <h1>Privacy</h1>
+  <p class="lede">Short version: your health data never leaves your device. There is no account, no server that receives files, no analytics and no cookies.</p>
+
+  <h2>What happens when you choose a file</h2>
+  <ul>
+    <li>Your browser opens the zip and reads <code>export.xml</code> on your device, in a background thread of this page. The file is not uploaded anywhere.</li>
+    <li>The result is a compact summary: one value per measure per day, the occasional reading (such as VO₂ max or weight), and your workouts. It does not keep the individual samples, your date of birth or other profile details beyond what the charts use.</li>
+    <li>That summary is stored in this browser's own storage (IndexedDB) so the dashboard is there next time. It is only readable by this site, in this browser, on this device.</li>
+    <li>Your settings (units and targets) are stored the same way.</li>
+  </ul>
+
+  <h2>What the site can and cannot do</h2>
+  <ul>
+    <li>The site is a set of static files served from Vercel. There is no backend code, database or API.</li>
+    <li>Every page is sent with a Content-Security-Policy that includes <code>connect-src 'none'</code>. That tells your browser to block every network request the page's scripts might try to make (fetch, XMLHttpRequest, WebSocket, beacons), so the page cannot send your data even by mistake. Scripts, styles and the font may only come from this site itself.</li>
+    <li>No third-party scripts, fonts, trackers or analytics are loaded. The font is served from this site.</li>
+    <li>Like any website, the host sees ordinary request logs when you load the pages (such as IP address and the file requested). Those requests never contain your health data.</li>
+  </ul>
+
+  <h2>Check it yourself</h2>
+  <ul>
+    <li><b>Airplane Mode.</b> Load this site, switch on Airplane Mode (or disconnect from the internet), then choose your export. It reads and shows everything without a connection.</li>
+    <li><b>Network panel.</b> On a computer, open your browser's developer tools, go to the Network tab, then choose your file. No request carries your data.</li>
+    <li><b>Source.</b> The code is short and readable, with no build step: what you download is what runs.</li>
+  </ul>
+
+  <h2>Deleting your data</h2>
+  <ul>
+    <li>In the app, open Settings (the menu at the top right) and choose <b>Forget my data</b>. This deletes the stored summary and settings from this browser.</li>
+    <li>Clearing this site's data in your browser settings does the same.</li>
+    <li>Browsers can also clear stored data on their own, for example Safari after a period without visits. Keep your export, or use <b>Save a copy (.json)</b>, if you want to reopen the dashboard later.</li>
+  </ul>
+
+  <h2>Not medical advice</h2>
+  <p>Health Atlas shows what your devices recorded. Device readings can be wrong or incomplete, and the short explanations summarise general guidance only. They are not a diagnosis or a recommendation. Talk to a qualified clinician about your health.</p>
+
+  <h2>Not affiliated with Apple</h2>
+  <p>Health Atlas is an independent project. It is not affiliated with, sponsored or endorsed by Apple Inc. Apple, Apple Watch, iPhone and Apple Health are trademarks of Apple Inc.</p>
+</main>
+</body>
+</html>
