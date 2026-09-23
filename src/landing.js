@@ -158,7 +158,7 @@ function init() {
   const fit = () => { const w = stage.clientWidth; const s = Math.min(1.12, w / 640); scene.style.setProperty('--lp-s', s.toFixed(3)); stage.style.height = w < 640 ? `${Math.round(680 * s)}px` : ''; measureTiles(tiles); };
   addEventListener('resize', fit);
 
-  const start = () => { L.classList.add('on'); requestAnimationFrame(() => { rig.classList.add('in'); rig.querySelectorAll('.sw').forEach(a => a.setAttribute('stroke-dasharray', a.dataset.to)); }); };
+  const start = () => { L.classList.add('on'); setTimeout(() => document.getElementById('drop').classList.add('settled'), 1800); requestAnimationFrame(() => { rig.classList.add('in'); rig.querySelectorAll('.sw').forEach(a => a.setAttribute('stroke-dasharray', a.dataset.to)); }); };
   const ready = () => requestAnimationFrame(() => requestAnimationFrame(start));
   // the landing starts hidden until the app knows there is no stored data; animate when it appears
   let started = false;

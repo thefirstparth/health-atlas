@@ -45,14 +45,14 @@
       <div class="drop lp-drop rv" id="drop" tabindex="-1">
         <input type="file" id="file" accept=".zip,.xml,.json,application/zip,text/xml,application/json" hidden>
         <div class="lp-file" aria-hidden="true">
-          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M19 10h4M23 14h4M19 18h4M23 22h4M19 26h4"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></svg>
+          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M17 7h4M21 11h4M17 15h4M21 19h4M17 23h4"/><rect class="fr" x="9" y="33" width="28" height="14" rx="4"/><text class="ft" x="23" y="43.5" text-anchor="middle">ZIP</text></svg>
         </div>
         <div class="lp-droptext">
           <b>Drop <span class="mono">export.zip</span> here</b>
           <span>or choose it from Files, Finder or Downloads</span>
         </div>
         <button class="primary lp-btn" id="pick" type="button"><span>Choose export.zip</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <p class="hint">Also opens <b>export.xml</b>, or a <b>.json</b> copy saved from this site.</p>
+        <p class="hint">Also opens <b>export.xml</b> or a saved <b>.json</b> copy.</p>
       </div>
       <p class="err" id="err" role="alert" hidden></p>
 
@@ -78,7 +78,7 @@
       </div>
       <div class="lp-tiles" id="lpTiles">
         <div class="lp-zip" id="lpZip" aria-hidden="true">
-          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M19 10h4M23 14h4M19 18h4M23 22h4M19 26h4"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></svg>
+          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M17 7h4M21 11h4M17 15h4M21 19h4M17 23h4"/><rect class="fr" x="9" y="33" width="28" height="14" rx="4"/><text class="ft" x="23" y="43.5" text-anchor="middle">ZIP</text></svg>
           <b>export.zip</b><span>years of readings</span>
         </div>
       </div>
@@ -98,33 +98,56 @@
       <a class="lp-link" href="privacy.html">Read the privacy details <span aria-hidden="true">→</span></a>
     </div>
     <div class="lp-pscene" aria-hidden="true">
-      <svg viewBox="0 0 560 400" class="lp-psvg">
-        <defs>
-          <clipPath id="lpInside"><rect x="36" y="36" width="300" height="328" rx="34"/></clipPath>
-        </defs>
-        <rect class="dev" x="36" y="36" width="300" height="328" rx="34"/>
-        <text class="lab" x="64" y="76">THIS BROWSER</text>
-        <g class="flow" clip-path="url(#lpInside)">
-          <path class="track" d="M112 206 H258"/>
-          <path class="dash" d="M112 206 H258"/>
+      <svg viewBox="0 0 560 360" class="lp-psvg lp-psvg-h">
+        <rect class="dev" x="16" y="16" width="344" height="328" rx="22"/>
+        <line class="devbar" x1="16" x2="360" y1="58" y2="58"/>
+        <circle class="dot" cx="40" cy="37" r="5"/><circle class="dot" cx="56" cy="37" r="5"/><circle class="dot" cx="72" cy="37" r="5"/>
+        <rect class="addr" x="96" y="26" width="236" height="22" rx="11"/>
+        <text class="addrt" x="214" y="41" text-anchor="middle">Your browser, on your device</text>
+        <path class="track" d="M122 178 H232"/>
+        <path class="dash" d="M122 178 H232"/>
+        <g transform="translate(64 150)"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M17 7h4M21 11h4M17 15h4M21 19h4M17 23h4"/><rect class="fr" x="9" y="33" width="28" height="14" rx="4"/><text class="ft" x="23" y="43.5" text-anchor="middle">ZIP</text></g>
+        <text class="cap" x="88" y="238" text-anchor="middle">export.zip</text>
+        <g transform="translate(240 140)">
+          <rect x="0" y="0" width="76" height="76" rx="16" class="pcard"/>
+          <rect x="14" y="44" width="8" height="20" rx="3" class="b1"/><rect x="27" y="34" width="8" height="30" rx="3" class="b2"/><rect x="40" y="40" width="8" height="24" rx="3" class="b1"/><rect x="53" y="26" width="8" height="38" rx="3" class="b2"/>
+          <path d="M14 24 C26 16 40 20 62 11" class="pl"/>
         </g>
-        <g class="pfile" transform="translate(76 170)"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></g>
-        <text class="cap" x="98" y="252" text-anchor="middle">export.zip</text>
-        <g class="pchart" transform="translate(246 168)">
-          <rect x="0" y="0" width="64" height="76" rx="14" class="pcard"/>
-          <rect x="12" y="44" width="7" height="20" rx="2.5" class="b1"/><rect x="23" y="34" width="7" height="30" rx="2.5" class="b2"/><rect x="34" y="40" width="7" height="24" rx="2.5" class="b1"/><rect x="45" y="26" width="7" height="38" rx="2.5" class="b2"/>
-          <path d="M12 26 C22 18 34 22 52 12" class="pl"/>
+        <text class="cap" x="278" y="238" text-anchor="middle">your charts</text>
+        <text class="cap2" x="188" y="312" text-anchor="middle">Read, stored and shown right here</text>
+        <path class="try" d="M366 178 H412"/>
+        <g class="pks">
+          <circle class="pk" cy="178" r="4.5" cx="366"><animate attributeName="cx" values="366;414;404" keyTimes="0;.6;1" dur="2.4s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle>
+          <circle class="pk" cy="178" r="4.5" cx="366" opacity="0"><animate attributeName="cx" values="366;414;404" keyTimes="0;.6;1" dur="2.4s" begin=".8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin=".8s" repeatCount="indefinite"/></circle>
+          <circle class="pk" cy="178" r="4.5" cx="366" opacity="0"><animate attributeName="cx" values="366;414;404" keyTimes="0;.6;1" dur="2.4s" begin="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin="1.6s" repeatCount="indefinite"/></circle>
         </g>
-        <text class="cap" x="278" y="266" text-anchor="middle">your charts</text>
-        <text class="cap2" x="186" y="330" text-anchor="middle">read and stored on this device</text>
-        <g class="leak">
-          <circle class="pk k1" cx="340" cy="206" r="4.5"/><circle class="pk k2" cx="340" cy="206" r="4.5"/><circle class="pk k3" cx="340" cy="206" r="4.5"/>
-        </g>
-        <line class="wall" x1="392" y1="120" x2="392" y2="292"/>
-        <g class="xmark" transform="translate(392 206)"><circle r="17"/><path d="M-6 -6 6 6M6 -6 -6 6"/></g>
-        <text class="wlab" x="392" y="318" text-anchor="middle">connect-src 'none'</text>
-        <g class="net" transform="translate(474 206)"><circle r="44" class="netc"/><path d="M-44 0H44M0 -44C-18 -26 -18 26 0 44M0 -44C18 -26 18 26 0 44M-38 -22H38M-38 22H38" class="netl"/></g>
-        <text class="cap" x="474" y="274" text-anchor="middle">the internet</text>
+        <line class="wall" x1="430" y1="96" x2="430" y2="262"/>
+        <g transform="translate(430 178)"><g class="xm"><circle r="16"/><path d="M-5.5 -5.5 5.5 5.5M5.5 -5.5 -5.5 5.5"/><animateTransform attributeName="transform" type="scale" values="1;1;1.14;1" keyTimes="0;.72;.84;1" dur=".8s" repeatCount="indefinite"/></g></g>
+        <text class="wlab" x="430" y="292" text-anchor="middle">connect-src 'none'</text>
+        <text class="wsub" x="430" y="310" text-anchor="middle">every request refused</text>
+        <g transform="translate(510 178)"><circle r="34" class="netc"/><path d="M-34 0H34M0 -34C-14 -20 -14 20 0 34M0 -34C14 -20 14 20 0 34M-29 -17H29M-29 17H29" class="netl"/></g>
+        <text class="cap" x="510" y="238" text-anchor="middle">the internet</text>
+      </svg>
+      <svg viewBox="0 0 340 520" class="lp-psvg lp-psvg-v">
+        <rect class="dev" x="10" y="10" width="320" height="272" rx="22"/>
+        <line class="devbar" x1="10" x2="330" y1="52" y2="52"/>
+        <circle class="dot" cx="32" cy="31" r="4.5"/><circle class="dot" cx="47" cy="31" r="4.5"/><circle class="dot" cx="62" cy="31" r="4.5"/>
+        <rect class="addr" x="82" y="20" width="232" height="22" rx="11"/>
+        <text class="addrt" x="198" y="35" text-anchor="middle">Your browser, on your device</text>
+        <path class="track" d="M104 146 H196"/><path class="dash" d="M104 146 H196"/>
+        <g transform="translate(46 118)"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M17 7h4M21 11h4M17 15h4M21 19h4M17 23h4"/><rect class="fr" x="9" y="33" width="28" height="14" rx="4"/><text class="ft" x="23" y="43.5" text-anchor="middle">ZIP</text></g>
+        <text class="cap" x="70" y="206" text-anchor="middle">export.zip</text>
+        <g transform="translate(204 108)"><rect x="0" y="0" width="76" height="76" rx="16" class="pcard"/><rect x="14" y="44" width="8" height="20" rx="3" class="b1"/><rect x="27" y="34" width="8" height="30" rx="3" class="b2"/><rect x="40" y="40" width="8" height="24" rx="3" class="b1"/><rect x="53" y="26" width="8" height="38" rx="3" class="b2"/><path d="M14 24 C26 16 40 20 62 11" class="pl"/></g>
+        <text class="cap" x="242" y="206" text-anchor="middle">your charts</text>
+        <text class="cap2" x="170" y="256" text-anchor="middle">Read, stored and shown right here</text>
+        <path class="try" d="M170 290 V326"/>
+        <g class="pks"><circle class="pk" cx="170" r="4.5" cy="296" opacity="0"><animate attributeName="cy" values="296;336;328" keyTimes="0;.6;1" dur="2.4s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle><circle class="pk" cx="170" r="4.5" cy="296" opacity="0"><animate attributeName="cy" values="296;336;328" keyTimes="0;.6;1" dur="2.4s" begin="0.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin="0.8s" repeatCount="indefinite"/></circle><circle class="pk" cx="170" r="4.5" cy="296" opacity="0"><animate attributeName="cy" values="296;336;328" keyTimes="0;.6;1" dur="2.4s" begin="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.62;1" dur="2.4s" begin="1.6s" repeatCount="indefinite"/></circle></g>
+        <line class="wall" x1="40" y1="340" x2="300" y2="340"/>
+        <g transform="translate(170 340)"><g class="xm"><circle r="16"/><path d="M-5.5 -5.5 5.5 5.5M5.5 -5.5 -5.5 5.5"/><animateTransform attributeName="transform" type="scale" values="1;1;1.14;1" keyTimes="0;.72;.84;1" dur=".8s" repeatCount="indefinite"/></g></g>
+        <text class="wlab" x="170" y="380" text-anchor="middle">connect-src 'none'</text>
+        <text class="wsub" x="170" y="398" text-anchor="middle">every request refused</text>
+        <g transform="translate(170 452)"><circle r="30" class="netc"/><path d="M-30 0H30M0 -30C-12 -18 -12 18 0 30M0 -30C12 -18 12 18 0 30M-26 -15H26M-26 15H26" class="netl"/></g>
+        <text class="cap" x="170" y="506" text-anchor="middle">the internet</text>
       </svg>
     </div>
   </section>
