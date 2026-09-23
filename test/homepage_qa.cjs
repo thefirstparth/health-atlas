@@ -11,7 +11,7 @@ const CHECK = () => {
   const vis = e => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && +cs.opacity > 0.05; };
   if (document.documentElement.scrollWidth > vw + 1) out.push(`sideways scroll ${document.documentElement.scrollWidth}>${vw}`);
   // HTML text: clipped, outside viewport, escaping its card
-  L.querySelectorAll('h1,h2,p,b,span,a,button,li > div,dd,dt,figcaption').forEach(e => {
+  L.querySelectorAll('h1,h2,p,b,span,a,button,li > div,.lp-eyebrow').forEach(e => {
     if (!vis(e) || e.closest('.lp-rig') || e.closest('svg')) return;
     const r = e.getBoundingClientRect();
     if (r.right > vw + 1 || r.left < -1) out.push(`outside viewport: "${e.textContent.trim().slice(0, 40)}"`);
@@ -21,7 +21,7 @@ const CHECK = () => {
     if (card) { const c = card.getBoundingClientRect(); if (r.right > c.right + 1 || r.left < c.left - 1 || r.bottom > c.bottom + 1) out.push(`escapes card: "${e.textContent.trim().slice(0, 40)}"`); }
   });
   // single-line elements must not wrap
-  L.querySelectorAll('.lp-meta,.lp-mini,.lp-btn span,.lp-light,.lp-spec dt,.lp-spec dd,.lp-nav a,.lp-droptext b,.lp-kicker,.lp-rechead span').forEach(e => {
+  L.querySelectorAll('.lp-eyebrow,.lp-mini,.lp-btn span,.lp-light,.lp-chip,.lp-proof b,.lp-nav a,.lpc h4,.lpc .v,.lp-droptext b,.lp-kicker').forEach(e => {
     if (!vis(e)) return; const h = e.getBoundingClientRect().height, o = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = o;
     if (h > h1 + 2) out.push(`wraps: "${e.textContent.trim().slice(0, 40)}"`);
   });
@@ -72,7 +72,6 @@ const TILES_DONE = () => { const t = [...document.querySelectorAll('.lp-tile')];
     await sec('#chapters', 'd-chapters-mid', 0.32);
     await sec('#chapters', 'e-chapters-end', 0.98);
     const td = await p.evaluate(TILES_DONE); if (td !== 'ok') add('chapters', [td]);
-    await sec('#live', 'e2-live', 0); await p.waitForTimeout(1800); await p.screenshot({ path: `${OUT}/${tag}-e2-live.png` });
     await sec('#private', 'f-private', 0);
     await p.evaluate(() => { const e = document.querySelector('#private'); scrollTo(0, e.getBoundingClientRect().top + scrollY - 20); }); await p.waitForTimeout(700);
     await p.locator('.lp-pscene').screenshot({ path: `${OUT}/${tag}-g-privacy-scene.png` });

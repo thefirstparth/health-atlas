@@ -1,4 +1,4 @@
-// Home page only: the recorder, scroll choreography, reveals. No data, no network.
+// Home page only: 3D card stack, scroll choreography, reveals. No data, no network.
 // Every number drawn here is made up (seeded), labelled as an illustration on the page.
 import { sampleData } from './sample.js';
 import { iconSvg } from './icons.js';
@@ -11,87 +11,95 @@ const el = (t, c, h) => { const e = document.createElement(t); if (c) e.classNam
 let seed = 11; const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 const smooth = (a, r) => a.map((_, i) => { let s = 0, n = 0; for (let k = -r; k <= r; k++) { const v = a[i + k]; if (v != null) { const w = r + 1 - Math.abs(k); s += v * w; n += w; } } return s / n; });
 const path = pts => pts.map((p, k) => (k ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('');
-// ------------------------------------------------------------ the recorder: four years of nights, drawn in
-const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], WDS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const hhmm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
-const dur = m => { m = Math.round(m); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`; };
-function makeRecorder(canvas, D, tip, dateEl) {
-  const N = D.meta.days, T0 = Date.parse(D.meta.start + 'T00:00:00Z'), bed = D.daily.sl_bed, wake = D.daily.sl_wake, asl = D.daily.sl_asleep;
-  const day = i => new Date(T0 + i * 864e5), Y0 = -150, Y1 = 660;
-  // the midpoint of sleep, averaged over 31 nights around each night
-  const mid = bed.map((b, i) => b == null || wake[i] == null ? null : (b + wake[i]) / 2), trend = smooth(mid.map(v => v), 28);
-  // one bar per week: median bedtime to median wake-up; weeks with 3+ short nights are marked
-  const med = a => { const v = a.filter(x => x != null).sort((p, q) => p - q); return v.length ? v[Math.floor((v.length - 1) / 2)] : null; };
-  const WKS = []; for (let a = 0; a < N; a += 7) { const b = Math.min(N - 1, a + 6), ix = []; for (let i = a; i <= b; i++) ix.push(i); const bd = med(ix.map(i => bed[i])), wk = med(ix.map(i => wake[i])); WKS.push({ a, b, bd, wk, short: ix.filter(i => asl[i] != null && asl[i] < 360).length }); }
-  // two plain facts about the figure, computed from it
-  let worst = { n: -1, a: 0 };
-  for (let a = 0; a + 60 <= N; a += 5) { let n = 0; for (let i = a; i < a + 60; i++) if (asl[i] != null && asl[i] < 360) n++; if (n > worst.n) worst = { n, a }; }
-  const avg = (a, b) => { let s = 0, n = 0; for (let i = a; i <= b; i++) if (asl[i] != null) { s += asl[i]; n++; } return n ? s / n : null; };
-  const yNow = avg(N - 365, N - 1), yPrev = avg(N - 730, N - 366);
-  const mono = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim() || 'monospace';
-  let W = 0, H = 0, dpr = 1, prog = 0, notes = 0, hover = -1;
-  const PR = 44, PB = 24, PT = 12;
-  const size = () => { dpr = Math.min(2, devicePixelRatio || 1); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); };
-  const X = i => (i + .5) / N * (W - PR), Y = m => PT + (m - Y0) / (Y1 - Y0) * (H - PT - PB);
-  const draw = () => {
-    if (!W) size(); if (!W) return;
-    const g = canvas.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-    const ink = css('--ink'), ink3 = css('--ink-3'), grid = css('--grid'), c = css('--c-sleep'), bad = css('--bad'), card = css('--card'), pw = W - PR;
-    g.font = `400 10.5px ${mono}`; g.textBaseline = 'middle';
-    for (let m = -120; m <= 660; m += 120) { const y = Math.round(Y(m)) + .5; g.strokeStyle = grid; g.lineWidth = 1; g.beginPath(); g.moveTo(0, y); g.lineTo(pw, y); g.stroke(); g.fillStyle = ink3; g.fillText(hhmm(m), pw + 8, y); }
-    g.textBaseline = 'alphabetic';
-    for (let yr = day(0).getUTCFullYear() + 1; yr <= day(N - 1).getUTCFullYear(); yr++) { const i = Math.round((Date.UTC(yr, 0, 1) - T0) / 864e5); if (i <= 0 || i >= N) continue; const x = Math.round(X(i)) + .5; g.strokeStyle = ink3; g.globalAlpha = .45; g.beginPath(); g.moveTo(x, PT); g.lineTo(x, H - PB + 6); g.stroke(); g.globalAlpha = 1; g.fillStyle = ink3; g.fillText(String(yr), x + 5, H - 6); }
-    const upto = Math.min(N, Math.floor(prog * N)), bw = Math.max(1.2, pw / WKS.length * .62);
-    for (const w of WKS) {
-      if (w.a >= upto || w.bd == null || w.wk == null) continue;
-      const on = hover >= w.a && hover <= w.b, short = w.short >= 3, x = X((w.a + w.b) / 2);
-      g.fillStyle = short ? bad : c; g.globalAlpha = (short ? .8 : .5) * (hover >= 0 && !on ? .5 : 1);
-      const y0 = Y(w.bd), y1 = Y(w.wk); g.beginPath(); if (g.roundRect) g.roundRect(x - bw / 2, y0, bw, y1 - y0, Math.min(bw / 2, 2)); else g.rect(x - bw / 2, y0, bw, y1 - y0); g.fill();
+// ------------------------------------------------------------ 3D card stack
+function card(k, x, y, z, r, w, title, color) {
+  const c = el('div', 'lpc'); c.style.cssText = `--k:${k};--x:${x}px;--y:${y}px;--z:${z}px;--r:${r}deg;width:${w}px`;
+  const h = el('h4'); const i = el('i'); i.style.background = `var(${color})`; h.append(i, document.createTextNode(title)); c.appendChild(h);
+  return c;
+}
+function buildRig(rig) {
+  rig.replaceChildren();
+  // 1. Sleep, 14 nights of stages against a 7 hr target
+  {
+    const c = card(0, 150, 200, 80, -1, 330, 'Time asleep · last 14 nights', '--c-sleep');
+    c.insertAdjacentHTML('beforeend', '<div class="v">7h 12m<small>avg a night</small></div>');
+    const W = 298, H = 132, s = sv('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}` }, c);
+    const y = m => H - 16 - m / 540 * (H - 22), bad = 'var(--bad)';
+    sv('rect', { x: 0, y: y(360), width: W - 24, height: H - 16 - y(360), fill: bad, 'fill-opacity': .07 }, s);
+    for (const [m, t] of [[0, '0'], [240, '4h'], [480, '8h']]) { sv('line', { class: 'gl', x1: 0, x2: W - 24, y1: y(m), y2: y(m) }, s); sv('text', { class: 'ax', x: W - 20, y: y(m) + 3 }, s).textContent = t; }
+    const bw = 13, gap = (W - 24) / 14;
+    for (let j = 0; j < 14; j++) {
+      const tot = 355 + rnd() * 150, parts = [['--st-deep', .15 + rnd() * .05], ['--st-core', .55], ['--st-rem', .22]];
+      let acc = 0; const cx = j * gap + gap / 2;
+      parts.forEach(([col, f], q) => { const m = tot * f, y0 = y(acc), y1 = y(acc + m); acc += m;
+        const r = sv('rect', { class: 'gr', x: cx - bw / 2, y: y1, width: bw, height: Math.max(0, y0 - y1 - (q ? 1 : 0)), rx: q === 2 ? 3.5 : 1.5, fill: `var(${col})` }, s); r.style.setProperty('--j', j); });
     }
-    g.globalAlpha = 1;
-    // trend of the midpoint
-    g.strokeStyle = ink; g.lineWidth = 1.6; g.lineJoin = 'round'; g.beginPath(); let on = false;
-    for (let i = 0; i < upto; i++) { const v = trend[i]; if (v == null || isNaN(v)) { on = false; continue; } if (!on) { g.moveTo(X(i), Y(v)); on = true; } else g.lineTo(X(i), Y(v)); }
-    g.stroke();
-    if (prog < 1) { const px = X(upto); g.strokeStyle = ink; g.lineWidth = 1; g.beginPath(); g.moveTo(px, PT); g.lineTo(px, H - PB); g.stroke(); const v = trend[Math.max(0, upto - 1)]; if (v != null) { g.fillStyle = ink; g.beginPath(); g.arc(px, Y(v), 3.5, 0, 7); g.fill(); } }
-    // annotations, once the drawing is done
-    if (notes > 0) {
-      g.globalAlpha = notes; g.font = `400 11px ${mono}`; g.textBaseline = 'alphabetic';
-      const label = (x, y, lines, align) => { const w = Math.max(...lines.map(t => g.measureText(t).width)) + 14, h = lines.length * 15 + 8; let lx = align === 'right' ? x - w : x; lx = Math.max(2, Math.min(lx, pw - w - 2)); g.fillStyle = card; g.globalAlpha = notes * .92; g.fillRect(lx, y - h + 4, w, h); g.globalAlpha = notes; g.strokeStyle = ink3; g.lineWidth = 1; g.strokeRect(lx + .5, y - h + 4.5, w - 1, h - 1); g.fillStyle = ink; lines.forEach((t, k) => g.fillText(t, lx + 7, y - h + 20 + k * 15)); };
-      if (worst.n >= 8) {
-        const a = worst.a, b = worst.a + 59, x0 = X(a), x1 = X(b), yb = Y(Y1) - 58;
-        g.strokeStyle = bad; g.lineWidth = 1.4; g.beginPath(); g.moveTo(x0, yb - 6); g.lineTo(x0, yb); g.lineTo(x1, yb); g.lineTo(x1, yb - 6); g.stroke();
-        const d0 = day(a), d1 = day(b);
-        label(x0, yb + 44, [`${MONS[d0.getUTCMonth()]} ${d0.getUTCFullYear()} – ${MONS[d1.getUTCMonth()]} ${d1.getUTCFullYear()}`, `${worst.n} of 60 nights under 6 hours`], x0 > pw * .6 ? 'right' : 'left');
-      }
-      if (W >= 560 && yNow != null && yPrev != null && Math.abs(yNow - yPrev) >= 5) {
-        const x = X(N - 1), yb = Y(Y0 + 10) + 44;
-        label(x, yb, [`Last 12 months: ${dur(yNow)} a night,`, `${Math.round(Math.abs(yNow - yPrev))} min ${yNow > yPrev ? 'more' : 'less'} than the 12 before`], 'right');
-      }
-      g.globalAlpha = 1;
-    }
-    if (hover >= 0) { const w = WKS[Math.floor(hover / 7)]; if (w && w.bd != null) { const x = X((w.a + w.b) / 2); g.strokeStyle = ink; g.lineWidth = 1; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(x, PT); g.lineTo(x, H - PB); g.stroke(); g.setLineDash([]); [w.bd, w.wk].forEach(v => { g.fillStyle = ink; g.beginPath(); g.arc(x, Y(v), 3.5, 0, 7); g.fill(); }); } }
-  };
-    const setDate = () => { const i = Math.max(0, Math.min(N - 1, Math.floor(prog * N) - 1)), d = day(i); dateEl.textContent = prog < 1 ? `${MONS[d.getUTCMonth()]} ${d.getUTCFullYear()}` : `${MONS[day(0).getUTCMonth()]} ${day(0).getUTCFullYear()} – ${MONS[day(N - 1).getUTCMonth()]} ${day(N - 1).getUTCFullYear()} · ${N.toLocaleString('en-US')} nights`; };
-  canvas.addEventListener('pointermove', e => {
-    if (prog < 1) return; const r = canvas.getBoundingClientRect(), px = e.clientX - r.left; if (px > W - PR) { canvas.dispatchEvent(new Event('pointerleave')); return; }
-    const k = Math.max(0, Math.min(WKS.length - 1, Math.floor(px / (W - PR) * N / 7))), w = WKS[k];
-    if (w.bd == null) return; hover = w.a; draw();
-    const d0 = day(w.a), d1 = day(w.b), ws = [w.a, w.b].map(i => asl[i]);
-    tip.textContent = `Week of ${d0.getUTCDate()} ${MONS[d0.getUTCMonth()]} ${d0.getUTCFullYear()}  ${hhmm(w.bd)} → ${hhmm(w.wk)}  ${w.short} short night${w.short === 1 ? '' : 's'}`;
-    tip.classList.add('on'); const tw = tip.offsetWidth; tip.style.left = Math.max(0, Math.min(X(w.a + 3) - tw / 2, W - tw)) + 'px';
-  });
-  canvas.addEventListener('pointerleave', () => { hover = -1; tip.classList.remove('on'); draw(); });
-  return {
-    resize() { size(); draw(); },
-    play(ms) {
-      if (RM || !ms) { prog = 1; notes = 1; setDate(); size(); draw(); return; }
-      const t0 = performance.now(); size();
-      const step = t => { const f = Math.min(1, (t - t0) / ms); prog = f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2; setDate(); draw(); if (f < 1) requestAnimationFrame(step); else { const t1 = performance.now(); const fade = t2 => { notes = Math.min(1, (t2 - t1) / 600); draw(); if (notes < 1) requestAnimationFrame(fade); }; requestAnimationFrame(fade); } };
-      requestAnimationFrame(step);
-    },
-    redraw: () => draw(),
-  };
+    sv('line', { x1: 0, x2: W - 24, y1: y(420), y2: y(420), stroke: 'var(--ink-3)', 'stroke-width': 1.3, 'stroke-dasharray': '4 4' }, s);
+    sv('text', { class: 'ax', x: 2, y: y(420) - 5, style: 'font-weight:650' }, s).textContent = 'Target 7h';
+    rig.appendChild(c);
+  }
+  // 2. Resting heart rate: faint days + smooth trend + pill
+  {
+    const c = card(1, 0, 0, -60, 1.5, 280, 'Resting heart rate', '--c-heart');
+    c.insertAdjacentHTML('beforeend', '<div class="v">56<small>bpm, 30-day avg</small></div>');
+    const W = 258, H = 92, s = sv('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}` }, c);
+    const raw = []; let b = 61; for (let i = 0; i < 60; i++) { b += (57 - b) * .04 + (rnd() - .5) * .6; raw.push(b + (rnd() - .5) * 4); }
+    const tr = smooth(raw, 5), x = i => i / 59 * (W - 10) + 5, y = v => 8 + (64 - v) / 12 * (H - 20);
+    raw.forEach((v, i) => { const d = sv('circle', { class: 'fd', cx: x(i), cy: y(v), r: 2.2, fill: 'var(--c-heart)', 'fill-opacity': .3 }, s); d.style.setProperty('--j', i); });
+    const p = sv('path', { class: 'dr', d: path(tr.map((v, i) => [x(i), y(v)])), fill: 'none', stroke: 'var(--c-heart)', 'stroke-width': 2.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, s);
+    p.style.setProperty('--len', 400);
+    const lx = x(59), ly = y(tr[59]);
+    sv('circle', { class: 'fd', cx: lx, cy: ly, r: 4.5, fill: 'var(--c-heart)', stroke: 'var(--card)', 'stroke-width': 2 }, s).style.setProperty('--j', 70);
+    rig.appendChild(c);
+  }
+  // 3. Activity rings, one week
+  {
+    const c = card(2, 330, 40, -140, 2, 262, 'Activity rings · this week', '--c-activity');
+    const s = sv('svg', { width: 230, height: 44, viewBox: '0 0 230 44' }, c);
+    const R = [[14.5, '--ring-move'], [10, '--ring-ex'], [5.5, '--ring-stand']];
+    for (let d = 0; d < 7; d++) { const g = sv('g', { transform: `translate(${d * 33 + 17} 22)` }, s);
+      R.forEach(([r, col], q) => { const C = 2 * Math.PI * r, f = Math.min(1, .45 + rnd() * .75);
+        sv('circle', { r, fill: 'none', stroke: `var(${col})`, 'stroke-opacity': .18, 'stroke-width': 3.8 }, g);
+        const a = sv('circle', { class: 'sw', r, fill: 'none', stroke: `var(${col})`, 'stroke-width': 3.8, 'stroke-linecap': 'round', transform: 'rotate(-90)', 'stroke-dasharray': `0 ${C}` }, g);
+        a.dataset.to = `${C * f} ${C}`; a.style.transitionDelay = `${1200 + d * 60 + q * 40}ms`; }); }
+    c.insertAdjacentHTML('beforeend', '<div class="s">Move closed 5 of 7 days</div>');
+    rig.appendChild(c);
+  }
+  // 4. Targets, last 8 weeks: one strip per target, misses in grey (as on the Overview)
+  {
+    const c = card(3, 396, 400, 150, -2, 236, 'Targets · last 8 weeks', '--c-workouts');
+    const s = sv('svg', { width: 204, height: 96, viewBox: '0 0 204 96' }, c);
+    [['Sleep', .62], ['Steps', .7], ['Daylight', .82]].forEach(([name, p], r) => {
+      const y0 = r * 32;
+      sv('text', { class: 'lb', x: 0, y: y0 + 9 }, s).textContent = name;
+      const n = 56, cw = 2.4, gap = (204 - n * cw) / (n - 1);
+      for (let k = 0; k < n; k++) { const hit = k > 49 ? true : rnd() < p, h = hit ? 14 : 8;
+        const q = sv('rect', { class: 'fd', x: k * (cw + gap), y: y0 + 13 + (14 - h) / 2, width: cw, height: h, rx: 1, fill: hit ? 'var(--good)' : 'var(--ink-3)', 'fill-opacity': hit ? .9 : .35 }, s); q.style.setProperty('--j', r * 20 + k * .6); }
+    });
+    rig.appendChild(c);
+  }
+  // 5. The last 7 days against your usual: band = usual, hollow = week before, dot = this week
+  {
+    const c = card(4, -10, 452, 10, .5, 290, 'Last 7 days vs your usual', '--c-overview');
+    const W = 258, H = 90, s = sv('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}` }, c);
+    const x0 = 170;
+    sv('line', { x1: x0, x2: x0, y1: 0, y2: H, stroke: 'var(--ink-3)', 'stroke-opacity': .5, 'stroke-dasharray': '2 3' }, s);
+    [['Sleep', '--c-sleep', -34, 20, 14], ['Steps', '--c-activity', 30, -12, 18], ['Resting HR', '--c-heart', -22, 4, 12]].forEach(([name, col, cur, prev, bw], r) => {
+      const y = 15 + r * 30;
+      sv('text', { class: 'lb', x: 0, y: y + 4 }, s).textContent = name;
+      sv('line', { x1: x0 - 62, x2: x0 + 62, y1: y, y2: y, stroke: 'var(--ink-3)', 'stroke-opacity': .45, 'stroke-width': 1.3, 'stroke-linecap': 'round' }, s);
+      sv('rect', { class: 'fd', x: x0 - bw, y: y - 5, width: bw * 2, height: 10, rx: 5, fill: `var(${col})`, 'fill-opacity': .22 }, s).style.setProperty('--j', r * 6);
+      sv('line', { class: 'fd', x1: x0 + prev, x2: x0 + cur, y1: y, y2: y, stroke: `var(${col})`, 'stroke-width': 2, 'stroke-opacity': .55 }, s).style.setProperty('--j', r * 6 + 10);
+      sv('circle', { class: 'fd', cx: x0 + prev, cy: y, r: 3.4, fill: 'var(--card)', stroke: `var(${col})`, 'stroke-width': 1.5 }, s).style.setProperty('--j', r * 6 + 10);
+      sv('circle', { class: 'fd', cx: x0 + cur, cy: y, r: 5.5, fill: `var(${col})`, stroke: 'var(--card)', 'stroke-width': 2 }, s).style.setProperty('--j', r * 6 + 16);
+    });
+    rig.appendChild(c);
+  }
+  // floating chips
+  const chip = (k, x, y, z, cls, html) => { const c = el('div', 'lp-chip ' + cls, html); c.style.cssText = `--k:${k};--x:${x}px;--y:${y}px;--z:${z}px`; rig.appendChild(c); };
+  chip(5, 430, 330, 230, 'good', '<svg viewBox="0 0 10 10"><path d="M5 1.5 9 7.5H1Z" fill="currentColor"/></svg>18 min more sleep vs last month');
+  chip(6, 70, 250, 200, 'flat', '<span class="dot" style="color:var(--c-sleep)"></span>Midpoint 03:14');
+  chip(7, 180, 606, 130, 'good', '<svg viewBox="0 0 10 10"><path d="M5 8.5 1 2.5h8Z" fill="currentColor"/></svg>Lowest resting HR week since January');
 }
 
 // ------------------------------------------------------------ chapters explode
@@ -218,48 +226,52 @@ function makeZoom(canvas, D) {
 
 // ------------------------------------------------------------ run
 function init() {
-  const tiles = document.getElementById('lpTiles');
-  buildTiles(tiles);
+  const rig = document.getElementById('lpRig'), tiles = document.getElementById('lpTiles'), scene = L.querySelector('.lp-scene'), stage = L.querySelector('.lp-stage');
+  buildRig(rig); buildTiles(tiles);
   L.querySelectorAll('.lp-h1 .w > span').forEach((s, i) => s.style.setProperty('--i', i));
-  L.querySelectorAll('.lp-hero .rv').forEach((s, i) => s.style.setProperty('--d', `${420 + i * 110}ms`));
+  L.querySelectorAll('.lp-hero .rv').forEach((s, i) => s.style.setProperty('--d', `${380 + i * 110}ms`));
   L.querySelectorAll('.lp-steps .rv').forEach((s, i) => s.style.setProperty('--d', `${i * 90}ms`));
-  const SD = sampleData();
-  const recorder = makeRecorder(document.getElementById('lpRec'), SD, document.getElementById('lpRecTip'), document.getElementById('lpRecDate'));
-  let rw = innerWidth; addEventListener('resize', () => { measureTiles(tiles); if (Math.abs(innerWidth - rw) > 1 && !L.hidden) { rw = innerWidth; recorder.resize(); } });
 
-  const start = () => { L.classList.add('on'); setTimeout(() => document.getElementById('drop').classList.add('settled'), 1800); setTimeout(() => recorder.play(3200), 550); };
+  // fit the 600x580 scene into the stage width
+  const fit = () => { const w = stage.clientWidth; const s = Math.min(1.12, w / 640); scene.style.setProperty('--lp-s', s.toFixed(3)); stage.style.height = w < 640 ? `${Math.round(680 * s)}px` : ''; measureTiles(tiles); };
+  addEventListener('resize', fit);
+
+  const start = () => { L.classList.add('on'); setTimeout(() => document.getElementById('drop').classList.add('settled'), 1800); requestAnimationFrame(() => { rig.classList.add('in'); rig.querySelectorAll('.sw').forEach(a => a.setAttribute('stroke-dasharray', a.dataset.to)); }); };
   const ready = () => requestAnimationFrame(() => requestAnimationFrame(start));
   // the landing starts hidden until the app knows there is no stored data; animate when it appears
   let started = false;
-  const reveal = () => { measureTiles(tiles); if (started) { recorder.resize(); return; } started = true; if (document.fonts && document.fonts.ready) document.fonts.ready.then(ready); else ready(); };
+  const reveal = () => { fit(); if (started) return; started = true; if (document.fonts && document.fonts.ready) document.fonts.ready.then(ready); else ready(); };
   if (!L.hidden) reveal();
   new MutationObserver(() => { if (!L.hidden) reveal(); }).observe(L, { attributes: true, attributeFilter: ['hidden'] });
-  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!L.hidden) recorder.redraw(); });
-  new MutationObserver(() => { if (!L.hidden) recorder.redraw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   // reveals below the fold
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .2 });
   L.querySelectorAll('.lp-steps .rv, .lp-finalcard').forEach(n => io.observe(n));
 
+  // counters
+  L.querySelectorAll('[data-count]').forEach(b => { const to = +b.dataset.count; if (!to || RM) return; b.textContent = '0'; setTimeout(() => { const t0 = performance.now(); const step = t => { const f = Math.min(1, (t - t0) / 900); b.textContent = String(Math.round(ease(f) * to)); if (f < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }, 900); });
+
   // buttons elsewhere on the page open the same file picker
   L.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => document.getElementById('pick').click()));
 
-  // zoom story + live demo
-  const zc = document.getElementById('lpZoom'), draw = makeZoom(zc, SD), zs = document.getElementById('zoom');
+  // zoom story
+  const SD = sampleData(), zc = document.getElementById('lpZoom'), draw = makeZoom(zc, SD), zs = document.getElementById('zoom');
   const caps = [...L.querySelectorAll('.lp-zcap')], dots = [...L.querySelectorAll('.lp-zsteps i')];
   let zp = RM ? 1 : 0, zStage = -1;
   const paintZoom = () => { draw(zp); const st = stageOf(zp); if (st !== zStage) { zStage = st; caps.forEach((c, k) => c.classList.toggle('on', k === st)); dots.forEach((d, k) => d.classList.toggle('on', k === st)); } };
   addEventListener('resize', () => { if (!L.hidden) paintZoom(); });
-  new MutationObserver(() => { if (!L.hidden) requestAnimationFrame(() => { paintZoom(); fitLive(); }); }).observe(L, { attributes: true, attributeFilter: ['hidden'] });
+  new MutationObserver(() => { if (!L.hidden) requestAnimationFrame(() => paintZoom()); }).observe(L, { attributes: true, attributeFilter: ['hidden'] });
   if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!L.hidden) paintZoom(); });
-  const live = document.getElementById('lpLive'), fwrap = document.getElementById('lpFwrap'), frame = document.getElementById('lpFrame');
-  const fitLive = () => { const w = fwrap.clientWidth; if (!w) return; const sc = w / 1280; live.style.transform = `scale(${sc})`; fwrap.style.height = Math.round(820 * sc) + 'px'; };
-  addEventListener('resize', fitLive);
-  new IntersectionObserver((es, ob) => es.forEach(e => { if (e.isIntersecting && getComputedStyle(frame).display !== 'none') { live.src = 'index.html?demo&embed'; fitLive(); ob.disconnect(); } }), { rootMargin: '700px 0px' }).observe(frame);
-  L.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => document.getElementById('demoTry').click()));
-  if (!L.hidden) requestAnimationFrame(() => { paintZoom(); fitLive(); });
+  if (!L.hidden) requestAnimationFrame(() => paintZoom());
 
   if (RM) { paintTiles(1); return; }
+
+  // pointer tilt for the rig and the drop card, gentle drift when idle
+  let tx = 0, ty = 0, cx = 0, cy = 0, last = 0;
+  addEventListener('pointermove', e => { if (L.hidden || e.pointerType === 'touch') return; tx = e.clientX / innerWidth - .5; ty = e.clientY / innerHeight - .5; last = performance.now(); }, { passive: true });
+  const drop = document.getElementById('drop');
+  drop.addEventListener('pointermove', e => { if (e.pointerType === 'touch') return; const r = drop.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5; drop.style.transform = `perspective(900px) rotateX(${-py * 4}deg) rotateY(${px * 5}deg)`; });
+  drop.addEventListener('pointerleave', () => { drop.style.transform = ''; });
 
   let explodeTop = 0, explodeH = 1;
   const measure = () => { const s = document.getElementById('chapters'); const r = s.getBoundingClientRect(); explodeTop = r.top + scrollY; explodeH = Math.max(1, s.offsetHeight - innerHeight); };
@@ -268,12 +280,14 @@ function init() {
   const loop = t => {
     requestAnimationFrame(loop);
     if (L.hidden) return;
+    const idle = t - last > 2500, drift = idle ? Math.sin(t / 2600) * .22 : 0, drift2 = idle ? Math.cos(t / 3100) * .14 : 0;
+    cx += ((idle ? drift : tx) - cx) * .06; cy += ((idle ? drift2 : ty) - cy) * .06;
+    const sc = Math.min(1, scrollY / 700);
+    rig.style.transform = `rotateX(${14 - cy * 12 + sc * 10}deg) rotateY(${-20 + cx * 22}deg) rotateZ(2deg) translateZ(${-sc * 120}px)`;
     const p = clamp((scrollY - explodeTop + innerHeight * .15) / explodeH);
     if (Math.abs(p - lastP) > .0005) { lastP = p; paintTiles(p); }
     const zr = zs.getBoundingClientRect(), np = clamp(-zr.top / Math.max(1, zs.offsetHeight - innerHeight));
     if (Math.abs(np - zp) > .0004) { zp = np; paintZoom(); }
-    const fr = frame.getBoundingClientRect(), fp = clamp(1 - (fr.top - innerHeight * .12) / (innerHeight * .75));
-    frame.style.transform = `perspective(1600px) rotateX(${(1 - fp) * 22}deg) scale(${.9 + fp * .1})`;
   };
   requestAnimationFrame(loop);
   // the dashboard may reveal the landing later (after "Forget my data")
