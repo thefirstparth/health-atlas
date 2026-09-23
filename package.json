@@ -1,0 +1,12 @@
+{
+  "name": "health-atlas",
+  "private": true,
+  "description": "Apple Health export dashboard that runs entirely in the browser.",
+  "scripts": {
+    "serve": "node tools/serve.mjs 8123",
+    "fixtures": "python3 test/make_fixtures.py test/fixtures",
+    "test:e2e": "node test/e2e.cjs",
+    "test:uploads": "node test/upload_cases.cjs",
+    "test:layout": "node test/layout_audit_app.cjs"
+  }
+}
