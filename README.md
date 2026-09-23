@@ -13,7 +13,9 @@ The site runs entirely in your browser. You choose your `export.zip`, the page r
 | `src/worker.js` | Web Worker that runs the parser off the main thread |
 | `src/parser.js` | Streaming unzip (native `DecompressionStream`) and a hand-written XML tokenizer. Never resolves DTD entities. Keeps about 30 MB in memory for an 800 MB `export.xml` |
 | `src/validate.js` | Structural check for stored data and imported `.json` copies |
-| `src/dashboard.js` | The dashboard. **Generated**, see below |
+| `src/dashboard.js` | The dashboard (charts, scrubbing, tapestry, calendars, records, poster) |
+| `src/sample.js` | Sample data for the demo (`?demo`) and the home page. Made up, never stored |
+| `src/landing.js` | Home page animations, the zoom-out story and the live demo |
 | `vercel.json` | Security headers (CSP and others) for every path |
 
 No build step and no dependencies. What is in the repo is what is served.
@@ -47,17 +49,16 @@ sh test/parity.sh /path/to/your/export.zip              # same, on a real export
 node test/upload_cases.cjs                              # every fixture through the real UI, including bad files
 node test/e2e.cjs /path/to/export.zip                   # offline read, settings, reload, forget
 node test/run-node.mjs test/fixtures/watch.zip /tmp/d.json && node test/layout_audit_app.cjs /tmp/d.json metric
+node test/homepage_qa.cjs /tmp/hpqa                     # home page: automated checks + screenshots, 4 widths x 2 themes
+node test/dashboard_qa.cjs /tmp/d.json /tmp/dqa         # dashboard's newer pieces: screenshots for a visual pass
+node test/demo_flow.cjs                                 # sample data is never stored and never replaces real data
 ```
 
 `layout_audit_app.cjs` walks every view, recent year and chapter at four widths in light and dark mode, and must report `0` issues before deploying.
 
 ## Editing the dashboard
 
-`src/dashboard.js` and `assets/dashboard.css` are generated from `tools/dashboard.template.html`, which is the standalone single-file version of the dashboard. The generator wraps it as a module, adds imperial units and editable targets, and makes the global listeners removable. Every substitution must match exactly once, so a changed template fails loudly.
-
-```sh
-python3 tools/make_dashboard.py
-```
+`src/dashboard.js` and `assets/dashboard.css` are the dashboard source. They started as a fork of the standalone single-file dashboard and now carry the web-only features: linked scrubbing, the period zoom, the sleep tapestry, calendar grids, chapter vital signs, records and the share poster. `src/sample.js` generates the made-up person used by the demo and the home page.
 
 ## Deploy on Vercel
 

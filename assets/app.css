@@ -97,3 +97,25 @@ dialog#settings::backdrop{background:rgba(10,11,14,.42);-webkit-backdrop-filter:
   .sheet{padding:20px 18px 18px;border-radius:20px}
   .fields label{grid-template-columns:minmax(0,1fr) 96px}
 }
+@media (max-width:760px){ #app:not([hidden]) ~ .toast, .toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))} }
+/* poster */
+dialog#poster{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(520px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain}
+dialog#poster::backdrop{background:rgba(10,11,14,.5);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.pctl{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-top:18px}
+.pprev{margin-top:16px;border-radius:16px;overflow:hidden;background:var(--card-2);box-shadow:0 0 0 1px var(--hair);aspect-ratio:1080/1350}
+.pprev img{display:block;width:100%;height:100%;object-fit:contain}
+/* sample data */
+.demobar{position:relative;z-index:19;display:flex;align-items:center;justify-content:center;gap:10px 16px;flex-wrap:wrap;padding:9px 16px;background:color-mix(in srgb,var(--c-sleep) 12%,var(--bg));border-bottom:1px solid var(--hair);font-size:13.5px;color:var(--ink-2);text-align:center}
+.demobar b{color:var(--ink)}
+.demobar button{font-weight:650;color:var(--ink);text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+#setForm.demo .acts,#setForm.demo .acts + .small{display:none}
+/* live demo inside the home page */
+html.embed body{background:var(--bg)}
+html.embed #shareBtn,html.embed #menuBtn,html.embed footer.about,html.embed .demobar{display:none !important}
+html.embed .shell{padding-bottom:40px}
+@media (max-width:760px){
+  .bar-in .pnav{order:3;min-width:0;flex:1 1 calc(100% - 110px)}
+  #shareBtn,#menuBtn{order:4}
+  .bar-in .years{order:5;min-width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .bar-in .years::-webkit-scrollbar{display:none}
+}

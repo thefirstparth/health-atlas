@@ -1,5 +1,6 @@
 // Home page only: 3D card stack, scroll choreography, reveals. No data, no network.
 // Every number drawn here is made up (seeded), labelled as an illustration on the page.
+import { sampleData } from './sample.js';
 const L = document.getElementById('landing');
 const NS = 'http://www.w3.org/2000/svg';
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -97,7 +98,7 @@ function buildRig(rig) {
   // floating chips
   const chip = (k, x, y, z, cls, html) => { const c = el('div', 'lp-chip ' + cls, html); c.style.cssText = `--k:${k};--x:${x}px;--y:${y}px;--z:${z}px`; rig.appendChild(c); };
   chip(5, 430, 330, 230, 'good', '<svg viewBox="0 0 10 10"><path d="M5 1.5 9 7.5H1Z" fill="currentColor"/></svg>18 min more sleep vs last month');
-  chip(6, 20, 250, 200, 'flat', '<span class="dot" style="color:var(--c-sleep)"></span>Midpoint 03:14');
+  chip(6, 70, 250, 200, 'flat', '<span class="dot" style="color:var(--c-sleep)"></span>Midpoint 03:14');
   chip(7, 180, 606, 130, 'bad', '<svg viewBox="0 0 10 10"><path d="M5 8.5 1 2.5h8Z" fill="currentColor"/></svg>2,400 steps short this week');
 }
 
@@ -146,6 +147,84 @@ function paintTiles(p) {
   });
 }
 
+// ------------------------------------------------------------ zoom story: one night to four years
+const KEYS = [[0, 0], [.16, 0], [.3, Math.log(7)], [.44, Math.log(7)], [.6, Math.log(365)], [.74, Math.log(365)], [.9, Math.log(1461)], [1, Math.log(1461)]];
+const smoothstep = t => t * t * (3 - 2 * t);
+function logSpan(p) { for (let k = 1; k < KEYS.length; k++) { const [p0, v0] = KEYS[k - 1], [p1, v1] = KEYS[k]; if (p <= p1) return v0 + (v1 - v0) * smoothstep((p - p0) / Math.max(1e-6, p1 - p0)); } return KEYS[KEYS.length - 1][1]; }
+const stageOf = p => p < .23 ? 0 : p < .52 ? 1 : p < .82 ? 2 : 3;
+function makeZoom(canvas, D) {
+  const A = D.daily.sl_asleep, DE = D.daily.sl_deep, RE = D.daily.sl_rem, N = A.length, LASTI = N - 1, T0 = Date.parse(D.meta.start + 'T00:00:00Z');
+  const pre = new Float64Array(N + 1), cnt = new Int32Array(N + 1); for (let i = 0; i < N; i++) { pre[i + 1] = pre[i] + (A[i] ?? 0); cnt[i + 1] = cnt[i] + (A[i] == null ? 0 : 1); }
+  const avg = (a, b) => { a = Math.max(0, a); b = Math.min(LASTI, b); const n = cnt[b + 1] - cnt[a]; return n ? (pre[b + 1] - pre[a]) / n : null; };
+  const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], WDS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt = i => new Date(T0 + i * 864e5), dur = m => `${Math.floor(Math.round(m) / 60)}h ${String(Math.round(m) % 60).padStart(2, '0')}m`;
+  const rangeEl = document.getElementById('lpZRange'), legSt = [...document.querySelectorAll('.lp-zleg.st')], legN = document.querySelector('.lp-zleg.nn'), legT = document.querySelector('.lp-zleg.tt');
+  return function draw(p) {
+    const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
+    const dpr = Math.min(2, devicePixelRatio || 1), W = canvas.clientWidth, H = canvas.clientHeight; if (!W || !H) return;
+    if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+    const g = canvas.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const sans = v('--sans') || 'system-ui', ink = v('--ink'), ink2 = v('--ink-2'), ink3 = v('--ink-3'), grid = v('--grid'), card = v('--card');
+    const span = Math.exp(logSpan(p)), mr = 46, pw = W - mr, top = 18, bot = 26, ph = H - top - bot, s0 = LASTI - span + 1;
+    const zy = Math.max(0, Math.min(1, (Math.log(span) - Math.log(30)) / (Math.log(300) - Math.log(30)))), lo = 270 * smoothstep(zy), hi = 600 - 90 * smoothstep(zy);
+    const x = i => (i - s0 + .5) / span * pw, y = m => top + ph - (m - lo) / (hi - lo) * ph;
+    g.font = `500 11px ${sans}`; g.textBaseline = 'middle';
+    for (const m of (zy > .5 ? [300, 360, 420, 480] : [0, 240, 480])) { g.strokeStyle = grid; g.lineWidth = 1; g.beginPath(); g.moveTo(0, Math.round(y(m)) + .5); g.lineTo(pw, Math.round(y(m)) + .5); g.stroke(); g.fillStyle = ink3; g.textAlign = 'left'; g.fillText(m ? `${m / 60}h` : '0', pw + 10, y(m)); }
+    const baseY = y(lo);
+    // nights
+    const bw = Math.max(1, Math.min(150, pw * .32, pw / span * .62)), barA = span < 30 ? 1 : Math.max(0, 1 - (Math.log(span) - Math.log(30)) / (Math.log(160) - Math.log(30))), dotA = Math.max(0, Math.min(.42, (Math.log(span) - Math.log(50)) / (Math.log(200) - Math.log(50)) * .42));
+    const cols = [v('--st-deep'), v('--st-core'), v('--st-rem')];
+    g.save(); g.beginPath(); g.rect(0, 0, pw, H); g.clip();
+    for (let i = Math.max(0, Math.floor(s0) - 1); i <= LASTI; i++) {
+      const a = A[i]; if (a == null) continue; const cx = x(i); if (cx < -bw || cx > pw + bw) continue;
+      if (dotA > 0) { g.globalAlpha = dotA; g.fillStyle = v('--c-sleep'); g.beginPath(); g.arc(cx, y(a), span > 700 ? 1.4 : 1.9, 0, Math.PI * 2); g.fill(); }
+      if (barA <= 0) continue;
+      const parts = [DE[i] || 0, a - (DE[i] || 0) - (RE[i] || 0), RE[i] || 0]; let acc = 0; g.globalAlpha = barA;
+      parts.forEach((m, k) => { const y0 = Math.min(baseY, y(acc)), y1 = y(acc + m); acc += m; if (y1 >= baseY) return; g.fillStyle = cols[k]; const r = Math.min(bw / 2, 6, (y0 - y1) / 2); if (k === 2 && bw > 3) { g.beginPath(); g.moveTo(cx - bw / 2, y0); g.lineTo(cx - bw / 2, y1 + r); g.arcTo(cx - bw / 2, y1, cx, y1, r); g.arcTo(cx + bw / 2, y1, cx + bw / 2, y1 + r, r); g.lineTo(cx + bw / 2, y0); g.closePath(); g.fill(); } else g.fillRect(cx - bw / 2, y1, bw, Math.max(0, y0 - y1 - (bw > 6 ? 1 : 0))); });
+    }
+    g.globalAlpha = 1;
+    // target
+    g.setLineDash([4, 4]); g.strokeStyle = ink3; g.lineWidth = 1.25; g.beginPath(); g.moveTo(0, Math.round(y(420)) + .5); g.lineTo(pw, Math.round(y(420)) + .5); g.stroke(); g.setLineDash([]);
+    // trend, fading in as nights blur together
+    const tA = Math.max(0, Math.min(1, (Math.log(span) - Math.log(25)) / (Math.log(140) - Math.log(25))));
+    if (tA > 0) {
+      const r = Math.max(3, Math.round(span / 10)), pts = []; const stepI = Math.max(1, Math.floor(span / pw * 2));
+      const js = Math.max(1, Math.round(r / 8)), tri = i => { let t = 0, n = 0; for (let j = i - r; j <= i + r; j += js) { const m = avg(j - r, j + r); if (m != null) { const w = r + 1 - Math.abs(j - i); t += m * w; n += w; } } return n ? t / n : null; };
+      for (let i = Math.max(0, Math.floor(s0)); i <= LASTI; i += stepI) { const m = tri(i); if (m != null) pts.push([x(i), y(m)]); }
+      const lm = tri(LASTI); if (lm != null) pts.push([x(LASTI), y(lm)]);
+      g.globalAlpha = tA; g.lineJoin = 'round'; g.lineCap = 'round';
+      [[card, 7], [ink, 3]].forEach(([c, w]) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); pts.forEach((q, k) => k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.stroke(); });
+      g.globalAlpha = 1;
+    }
+    g.restore();
+    g.font = `600 10.5px ${sans}`; g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineWidth = 4; g.lineJoin = 'round'; g.strokeStyle = card; g.strokeText('Target 7h', 4, y(420) - 9); g.fillStyle = ink2; g.fillText('Target 7h', 4, y(420) - 9);
+    // one night: label the stages
+    if (span < 1.6) {
+      const i = LASTI, a = A[i], parts = [['Deep', DE[i]], ['Core', a - DE[i] - RE[i]], ['REM', RE[i]]], cx = x(i), fade = Math.max(0, Math.min(1, (1.6 - span) / .5));
+      let acc = 0; g.globalAlpha = fade; g.textAlign = 'left';
+      parts.forEach(([n, m], k) => { const ym = y(acc + m / 2); acc += m; g.fillStyle = cols[k]; g.fillRect(cx + bw / 2 + 14, ym - 5, 10, 10); g.font = `650 13px ${sans}`; g.fillStyle = ink; g.fillText(dur(m), cx + bw / 2 + 32, ym); const w = g.measureText(dur(m)).width; g.font = `500 13px ${sans}`; g.fillStyle = ink2; g.fillText(n, cx + bw / 2 + 38 + w, ym); });
+      g.font = `700 22px ${sans}`; const tw0 = g.measureText(dur(a)).width;
+      if (cx - bw / 2 - 16 - tw0 >= 2) { g.fillStyle = ink; g.textAlign = 'right'; g.fillText(dur(a), cx - bw / 2 - 16, y(a) + 4); g.font = `500 12px ${sans}`; g.fillStyle = ink3; g.fillText('asleep', cx - bw / 2 - 16, y(a) + 22); }
+      else { g.textAlign = 'center'; g.lineWidth = 5; g.strokeStyle = card; g.strokeText(dur(a) + ' asleep', cx, y(a) - 18); g.fillStyle = ink; g.font = `700 16px ${sans}`; g.strokeText(dur(a) + ' asleep', cx, y(a) - 18); g.fillText(dur(a) + ' asleep', cx, y(a) - 18); }
+      g.globalAlpha = 1;
+    }
+    // x labels
+    g.font = `500 11px ${sans}`; g.fillStyle = ink3; g.textBaseline = 'alphabetic';
+    const lab = [], d0 = Math.max(0, Math.ceil(s0));
+    if (span < 1.6) lab.push([LASTI, (d => `${WDS[d.getUTCDay()]}, ${MONS[d.getUTCMonth()]} ${d.getUTCDate()}`)(dt(LASTI))]);
+    else if (span < 12) for (let i = d0; i <= LASTI; i++) lab.push([i, `${WDS[dt(i).getUTCDay()]} ${dt(i).getUTCDate()}`]);
+    else if (span < 80) for (let i = d0; i <= LASTI; i++) { if (dt(i).getUTCDay() === 1) lab.push([i, `${MONS[dt(i).getUTCMonth()]} ${dt(i).getUTCDate()}`]); }
+    else if (span < 700) for (let i = d0; i <= LASTI; i++) { if (dt(i).getUTCDate() === 1) lab.push([i, MONS[dt(i).getUTCMonth()]]); }
+    else for (let i = d0; i <= LASTI; i++) { const d = dt(i); if (d.getUTCDate() === 1 && d.getUTCMonth() === 0) lab.push([i, String(d.getUTCFullYear())]); }
+    let lastR = -1e9;
+    lab.forEach(([i, t]) => { const w = g.measureText(t).width; let L2 = Math.max(0, Math.min(pw - w, x(i) - w / 2)); if (L2 < lastR + 10) return; g.textAlign = 'left'; g.fillText(t, L2, H - 6); lastR = L2 + w; });
+    legSt.forEach(e => { e.style.display = barA > .05 ? '' : 'none'; }); legN.style.display = dotA > .05 ? '' : 'none'; legT.style.display = tA > .05 ? '' : 'none';
+    // header range
+    const a0 = Math.max(0, Math.round(s0)), fmt = i => `${MONS[dt(i).getUTCMonth()]} ${dt(i).getUTCDate()}`;
+    rangeEl.textContent = span < 1.6 ? `Night of ${fmt(LASTI)}` : span < 80 ? `${fmt(a0)} – ${fmt(LASTI)}` : `${MONS[dt(a0).getUTCMonth()]} ${dt(a0).getUTCFullYear()} – ${MONS[dt(LASTI).getUTCMonth()]} ${dt(LASTI).getUTCFullYear()}`;
+  };
+}
+
 // ------------------------------------------------------------ run
 function init() {
   const rig = document.getElementById('lpRig'), tiles = document.getElementById('lpTiles'), scene = L.querySelector('.lp-scene'), stage = L.querySelector('.lp-stage');
@@ -176,6 +255,21 @@ function init() {
   // buttons elsewhere on the page open the same file picker
   L.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => document.getElementById('pick').click()));
 
+  // zoom story + live demo
+  const SD = sampleData(), zc = document.getElementById('lpZoom'), draw = makeZoom(zc, SD), zs = document.getElementById('zoom');
+  const caps = [...L.querySelectorAll('.lp-zcap')], dots = [...L.querySelectorAll('.lp-zsteps i')];
+  let zp = RM ? 1 : 0, zStage = -1;
+  const paintZoom = () => { draw(zp); const st = stageOf(zp); if (st !== zStage) { zStage = st; caps.forEach((c, k) => c.classList.toggle('on', k === st)); dots.forEach((d, k) => d.classList.toggle('on', k === st)); } };
+  addEventListener('resize', () => { if (!L.hidden) paintZoom(); });
+  new MutationObserver(() => { if (!L.hidden) requestAnimationFrame(() => { paintZoom(); fitLive(); }); }).observe(L, { attributes: true, attributeFilter: ['hidden'] });
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!L.hidden) paintZoom(); });
+  const live = document.getElementById('lpLive'), fwrap = document.getElementById('lpFwrap'), frame = document.getElementById('lpFrame');
+  const fitLive = () => { const w = fwrap.clientWidth; if (!w) return; const sc = w / 1280; live.style.transform = `scale(${sc})`; fwrap.style.height = Math.round(820 * sc) + 'px'; };
+  addEventListener('resize', fitLive);
+  new IntersectionObserver((es, ob) => es.forEach(e => { if (e.isIntersecting && getComputedStyle(frame).display !== 'none') { live.src = 'index.html?demo&embed'; fitLive(); ob.disconnect(); } }), { rootMargin: '700px 0px' }).observe(frame);
+  L.querySelectorAll('[data-demo]').forEach(b => b.addEventListener('click', () => document.getElementById('demoTry').click()));
+  if (!L.hidden) requestAnimationFrame(() => { paintZoom(); fitLive(); });
+
   if (RM) { paintTiles(1); return; }
 
   // pointer tilt for the rig and the drop card, gentle drift when idle
@@ -198,9 +292,13 @@ function init() {
     rig.style.transform = `rotateX(${14 - cy * 12 + sc * 10}deg) rotateY(${-20 + cx * 22}deg) rotateZ(2deg) translateZ(${-sc * 120}px)`;
     const p = clamp((scrollY - explodeTop + innerHeight * .15) / explodeH);
     if (Math.abs(p - lastP) > .0005) { lastP = p; paintTiles(p); }
+    const zr = zs.getBoundingClientRect(), np = clamp(-zr.top / Math.max(1, zs.offsetHeight - innerHeight));
+    if (Math.abs(np - zp) > .0004) { zp = np; paintZoom(); }
+    const fr = frame.getBoundingClientRect(), fp = clamp(1 - (fr.top - innerHeight * .12) / (innerHeight * .75));
+    frame.style.transform = `perspective(1600px) rotateX(${(1 - fp) * 22}deg) scale(${.9 + fp * .1})`;
   };
   requestAnimationFrame(loop);
   // the dashboard may reveal the landing later (after "Forget my data")
   new MutationObserver(() => { if (!L.hidden) { measure(); measureTiles(tiles); lastP = -1; } }).observe(L, { attributes: true, attributeFilter: ['hidden'] });
 }
-if (L) init();
+if (L && !new URLSearchParams(location.search).has('embed')) init();

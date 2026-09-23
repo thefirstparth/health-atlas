@@ -242,3 +242,66 @@
   .lp-finalline path{stroke-dashoffset:0}
   .lp-psvg .pks{display:none}
 }
+.lp-try{margin-top:14px;max-width:560px;text-align:center}
+.lp-trybtn{font-size:14px;color:var(--ink-2);padding:6px 10px;border-radius:999px}
+.lp-trybtn b{color:var(--ink);font-weight:650;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--hair)}
+.lp-trybtn:hover b{text-decoration-color:var(--ink)}
+.lp-trybtn span{display:inline-block;transition:transform .3s var(--lp-ease)}
+.lp-trybtn:hover span{transform:translateX(3px)}
+
+/* ---------------- zoom story ---------------- */
+.lp-zoom{height:330vh}
+.lp-zsticky{position:sticky;top:0;height:100vh;height:100svh;max-width:1240px;margin:0 auto;padding:40px 28px;display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:48px;align-items:center}
+.lp-zcaps{position:relative;margin-top:14px;min-height:200px}
+.lp-zcap{position:absolute;inset:0 0 auto 0;opacity:0;transform:translateY(16px);transition:opacity .45s ease,transform .6s var(--lp-ease);pointer-events:none}
+.lp-zcap.on{opacity:1;transform:none}
+.lp-zcap h2{font:750 clamp(40px,5vw,68px)/1 var(--display);letter-spacing:-.05em;margin:0}
+.lp-zcap p{font-size:17px;line-height:1.55;color:var(--ink-2);margin:18px 0 0;max-width:34ch}
+.lp-zsteps{display:flex;gap:8px;margin-top:6px}
+.lp-zsteps i{width:28px;height:4px;border-radius:2px;background:var(--hair);transition:background .3s,width .4s var(--lp-ease)}
+.lp-zsteps i.on{background:var(--ink);width:44px}
+.lp-zcard{background:var(--card);border-radius:28px;box-shadow:var(--lp-shadow),0 0 0 .5px var(--hair);padding:20px 22px 16px;min-width:0}
+.lp-zhead{display:flex;align-items:center;gap:9px;font:650 15px var(--display)}
+.lp-zhead #lpZRange{margin-left:auto;font:600 13px var(--sans);color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lp-zdot{width:9px;height:9px;border-radius:50%;background:var(--c-sleep)}
+#lpZoom{display:block;width:100%;height:360px;margin-top:10px}
+.lp-zfoot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:10px;font-size:12px;color:var(--ink-2)}
+.lp-zleg{display:inline-flex;align-items:center;gap:7px}
+.lp-zleg i{width:10px;height:10px;border-radius:3px}
+.lp-zleg i.d{background:var(--st-deep)} .lp-zleg i.c{background:var(--st-core)} .lp-zleg i.r{background:var(--st-rem)}
+.lp-zleg i.t{width:18px;height:3px;border-radius:2px;background:var(--ink)}
+.lp-znote{margin-left:auto;color:var(--ink-3)}
+
+/* ---------------- live demo ---------------- */
+.lp-live{max-width:1240px;margin:0 auto;padding:60px 28px 30px}
+.lp-live .lp-sechead p:not(.lp-kicker){margin-inline:auto}
+.lp-frame{margin:40px auto 0;max-width:1180px;border-radius:22px;background:var(--card);box-shadow:var(--lp-shadow),0 0 0 .5px var(--hair);overflow:hidden;transform-origin:50% 0;will-change:transform}
+.lp-fbar{display:flex;align-items:center;gap:7px;padding:11px 16px;border-bottom:1px solid var(--hair)}
+.lp-fbar i{width:10px;height:10px;border-radius:50%;background:var(--ink-3);opacity:.35}
+.lp-fbar span{margin-left:10px;font-size:12.5px;font-weight:600;color:var(--ink-3)}
+.lp-fwrap{position:relative;height:640px;overflow:hidden;background:var(--bg)}
+.lp-fwrap iframe{position:absolute;left:0;top:0;width:1280px;height:820px;border:0;transform-origin:0 0;background:var(--bg)}
+.lp-livecta{margin-top:24px}
+.lp-light2{font-weight:650;font-size:15px;padding:12px 22px;border-radius:999px;background:var(--card);box-shadow:0 0 0 1px var(--hair);white-space:nowrap}
+.lp-light2:hover{box-shadow:0 0 0 1px var(--ink-3)}
+.lp-light2 span{display:inline-block;transition:transform .3s var(--lp-ease)}
+.lp-light2:hover span{transform:translateX(3px)}
+
+@media (max-width:1060px){
+  .lp-zsticky{grid-template-columns:minmax(0,1fr);align-content:center;gap:18px;padding-top:56px}
+  .lp-zcaps{min-height:150px}
+  #lpZoom{height:300px}
+}
+@media (max-width:760px){
+  .lp-zsticky{padding-inline:18px;padding-top:48px}
+  .lp-zcaps{min-height:150px}
+  .lp-zcap h2{font-size:40px}
+  .lp-zcap p{font-size:15.5px}
+  .lp-zcard{padding:16px 14px 12px;border-radius:22px}
+  #lpZoom{height:260px}
+  .lp-znote{margin-left:0;width:100%}
+  .lp-live{padding-inline:18px}
+  .lp-frame{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .lp-zoom{height:auto} .lp-zsticky{position:relative;height:auto} }
+.lp-zleg i.n{width:7px;height:7px;border-radius:50%;background:var(--c-sleep);opacity:.6}

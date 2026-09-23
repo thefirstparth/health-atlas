@@ -9,7 +9,7 @@ const AUDIT = () => {
   const vw = document.documentElement.clientWidth;
   if (document.documentElement.scrollWidth > vw + 1) issues.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${vw}`);
   // 1. clipped / overflowing text in HTML
-  const sel = '.rows .l, .rows .v, .rows .d, .chip, .hero .val, .hero .lab, .tag, .bname span, .bname small, .bval, .bvs .cap, .legend span, .plain h3, .rail h3, .plabel, .brand b, .delta .cap, .meta, .ctx span, .ctx b, .years button, .seg button, nav.chapters button span, .hbars .m, .hbars .nm span, .ringstats .v, .pbar div, th, td';
+  const sel = '.vt .vn, .vt .vv, .rec .rt span, .rec .rv2, .rec .rs, .demobar span, nav.chapters .ns, .rows .l, .rows .v, .rows .d, .chip, .hero .val, .hero .lab, .tag, .bname span, .bname small, .bval, .bvs .cap, .legend span, .plain h3, .rail h3, .plabel, .brand b, .delta .cap, .meta, .ctx span, .ctx b, .years button, .seg button, nav.chapters button span, .hbars .m, .hbars .nm span, .ringstats .v, .pbar div, th, td';
   document.querySelectorAll(sel).forEach(e => {
     const r = e.getBoundingClientRect(); if (!r.width) return;
     if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible' && !e.closest('.tbl-wrap')) issues.push(`clipped: "${e.textContent.trim().slice(0,40)}" (${e.className}) ${e.scrollWidth}>${e.clientWidth}`);
@@ -23,7 +23,7 @@ const AUDIT = () => {
   // wrapped = taller than the same element forced onto one line
   const wraps = e => { const h = e.getBoundingClientRect().height; const old = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = old; return h > h1 + 2; };
   const lineCount = e => { const old = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = old; return Math.round(e.getBoundingClientRect().height / Math.max(h1, 1)); };
-  document.querySelectorAll('.chip, .hero .val, .tag, .rows .v, .rows .d, .legend span, .bval, .plabel, .delta .cap, .bvs .cap, .years button, .seg button, .hero .lab').forEach(e => { if (e.getBoundingClientRect().width && wraps(e)) issues.push(`wrapped: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
+  document.querySelectorAll('.vt .vv, .rec .rv2, nav.chapters .ns, .chip, .hero .val, .tag, .rows .v, .rows .d, .legend span, .bval, .plabel, .delta .cap, .bvs .cap, .years button, .seg button, .hero .lab').forEach(e => { if (e.getBoundingClientRect().width && wraps(e)) issues.push(`wrapped: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
   document.querySelectorAll('.rows .l, .rail h3, .win .ws, .chain .cb, .debt .sub, .act span').forEach(e => { if (lineCount(e) > 3 || (e.matches('.rows .l, .rail h3') && lineCount(e) > 2)) issues.push(`3+ lines: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
   // 3b. inside comparison rows: cells in one row must not touch, and dividers must line up
   document.querySelectorAll('.rows').forEach(g => { const cells = [...g.children]; for (let i = 0; i + 2 < cells.length; i += 3) { const [a, b, c] = cells.slice(i, i + 3).map(e => e.getBoundingClientRect());

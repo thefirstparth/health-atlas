@@ -46,6 +46,9 @@ const CHECK = () => {
       if (top && !own.contains(top) && !(top.closest && top.closest('.lp-chip, .lpc') === own)) { out.push(`hidden behind another card: "${e.textContent.trim().slice(0, 30)}"`); break; }
     }
   });
+  // the 3D stack must never sit on top of the hero text
+  const copy = [...L.querySelectorAll('.lp-copy h1, .lp-copy p, .lp-copy .lp-drop, .lp-copy .lp-proof, .lp-copy .lp-try')].map(e => e.getBoundingClientRect());
+  L.querySelectorAll('.lpc, .lp-chip').forEach(c => { const r = c.getBoundingClientRect(); if (!r.width) return; if (copy.some(t => Math.min(t.right, r.right) - Math.max(t.left, r.left) > 2 && Math.min(t.bottom, r.bottom) - Math.max(t.top, r.top) > 2)) out.push(`3D card over hero text: "${c.textContent.trim().slice(0, 30)}"`); });
   return out;
 };
 const TILES_DONE = () => { const t = [...document.querySelectorAll('.lp-tile')]; return t.every(x => +getComputedStyle(x).opacity > .98) ? 'ok' : 'tiles not settled'; };
@@ -61,10 +64,15 @@ const TILES_DONE = () => { const t = [...document.querySelectorAll('.lp-tile')];
     const add = (where, list) => list.forEach(s => (all[s.replace(/\d+/g, '#')] = all[s.replace(/\d+/g, '#')] || []).push(`${tag}/${where}: ${s}`));
     add('hero', await p.evaluate(CHECK)); await p.screenshot({ path: `${OUT}/${tag}-b-hero.png` });
     const sec = async (sel, name, frac = 0) => { await p.evaluate(([s, f]) => { const e = document.querySelector(s); const top = e.getBoundingClientRect().top + scrollY; scrollTo(0, top + (e.offsetHeight - innerHeight) * f); }, [sel, frac]); await p.waitForTimeout(1100); add(name, await p.evaluate(CHECK)); await p.screenshot({ path: `${OUT}/${tag}-${name}.png` }); };
+    await sec('#zoom', 'b1-zoom-night', 0.06);
+    await sec('#zoom', 'b2-zoom-week', 0.37);
+    await sec('#zoom', 'b3-zoom-year', 0.67);
+    await sec('#zoom', 'b4-zoom-all', 0.97);
     await sec('#chapters', 'c-chapters-start', 0.02);
     await sec('#chapters', 'd-chapters-mid', 0.32);
     await sec('#chapters', 'e-chapters-end', 0.98);
     const td = await p.evaluate(TILES_DONE); if (td !== 'ok') add('chapters', [td]);
+    await sec('#live', 'e2-live', 0); await p.waitForTimeout(1800); await p.screenshot({ path: `${OUT}/${tag}-e2-live.png` });
     await sec('#private', 'f-private', 0);
     await p.evaluate(() => { const e = document.querySelector('#private'); scrollTo(0, e.getBoundingClientRect().top + scrollY - 20); }); await p.waitForTimeout(700);
     await p.locator('.lp-pscene').screenshot({ path: `${OUT}/${tag}-g-privacy-scene.png` });

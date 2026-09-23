@@ -2,14 +2,17 @@
 import { mountDashboard, DEFAULT_TARGETS } from './dashboard.js';
 import * as store from './store.js';
 import { validateData } from './validate.js';
+import { sampleData } from './sample.js';
 
 const $ = id => document.getElementById(id);
 const VIEWS = ['landing', 'processing', 'app'];
-let DATA = null, SET = { targets: { ...DEFAULT_TARGETS } }, dash = null, current = null, prevView = 'landing';
+let DATA = null, DEMO = null, SET = { targets: { ...DEFAULT_TARGETS } }, dash = null, current = null, prevView = 'landing';
+const Q = new URLSearchParams(location.search), EMBED = Q.has('embed');
+if (EMBED) document.documentElement.classList.add('embed');
 
 // The worker is created up front so every script is already loaded: after the page has loaded,
-// reading a file works with the network switched off.
-let worker = makeWorker();
+// reading a file works with the network switched off. (Not needed inside the home page's live demo.)
+let worker = EMBED ? null : makeWorker();
 function makeWorker() { return new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }); }
 
 function show(v) { current = v; VIEWS.forEach(k => { $(k).hidden = k !== v; }); window.scrollTo(0, 0); }
@@ -19,13 +22,22 @@ function toast(msg, ms = 3200) {
   document.body.appendChild(t); setTimeout(() => t.remove(), ms);
 }
 const mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.max(0.1, n / 1e6).toFixed(n < 1e7 ? 1 : 0) + ' MB';
-const units = () => SET.units || (DATA && DATA.meta.unitsHint) || (/^en-(US|LR|MM)$/.test(navigator.language || '') ? 'imperial' : 'metric');
+const units = () => SET.units || ((DEMO || DATA) && (DEMO || DATA).meta.unitsHint) || (/^en-(US|LR|MM)$/.test(navigator.language || '') ? 'imperial' : 'metric');
 
 function openDashboard() {
   if (dash) { dash.destroy(); dash = null; }
   show('app');
-  dash = mountDashboard(DATA, { units: units(), targets: SET.targets });
+  $('demoBar').hidden = !DEMO || EMBED;
+  dash = mountDashboard(DEMO || DATA, { units: units(), targets: SET.targets, ephemeral: !!DEMO });
 }
+// Sample data: a made-up person, never stored, never mixed with your own data.
+function openDemo() { DEMO = sampleData(); openDashboard(); }
+function closeDemo() {
+  DEMO = null; try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (DATA) openDashboard(); else { if (dash) { dash.destroy(); dash = null; } show('landing'); }
+}
+$('demoExit').addEventListener('click', () => { if (DATA) closeDemo(); else { closeDemo(); mergeNext = false; $('file').click(); } });
+$('demoTry').addEventListener('click', () => { try { history.replaceState(null, '', '?demo'); } catch (e) {} openDemo(); });
 
 // ---------------------------------------------------------------- reading a file
 function readFile(file, { merge = false } = {}) {
@@ -42,7 +54,7 @@ function readFile(file, { merge = false } = {}) {
       if (m.stage === 'assembling') setProgress(1, 'Putting the days together…');
       else setProgress(m.f, `${Math.floor(m.f * 100)}% read`);
     } else if (m.type === 'done') {
-      DATA = m.data;
+      DATA = m.data; DEMO = null; try { if (location.search) history.replaceState(null, '', location.pathname); } catch (e) {}
       try { await store.set('data', DATA); store.persist(); } catch (e) { toast('Could not save in this browser; the data will be gone when you close the tab.', 6000); }
       openDashboard();
       const secs = Math.max(1, Math.round((Date.now() - started) / 1000));
@@ -52,7 +64,8 @@ function readFile(file, { merge = false } = {}) {
     }
   };
   worker.onerror = e => { e.preventDefault(); fail('Something went wrong while reading this file.'); };
-  worker.postMessage({ file, prev: merge ? DATA : null });
+  if (!worker) worker = makeWorker();
+  worker.postMessage({ file, prev: merge && DATA ? DATA : null });
 }
 function setProgress(f, txt) {
   const p = Math.round(f * 100);
@@ -60,18 +73,18 @@ function setProgress(f, txt) {
 }
 function fail(msg) {
   resetWorker();
-  if (prevView === 'app' && DATA) { openDashboard(); toast(msg, 7000); return; }
+  if (prevView === 'app' && (DATA || DEMO)) { openDashboard(); toast(msg, 7000); return; }
   show('landing'); $('err').textContent = msg; $('err').hidden = false;
 }
-function resetWorker() { worker.terminate(); worker = makeWorker(); }
+function resetWorker() { if (worker) worker.terminate(); worker = makeWorker(); }
 const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-$('cancel').addEventListener('click', () => { resetWorker(); if (prevView === 'app' && DATA) openDashboard(); else show('landing'); });
+$('cancel').addEventListener('click', () => { resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
 
 // file input: one input, the "merge" flag decides what happens with the result
 let mergeNext = false;
 $('pick').addEventListener('click', () => { mergeNext = false; $('file').click(); });
-$('file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; readFile(f, { merge: mergeNext && !!DATA }); });
+$('file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; readFile(f, { merge: mergeNext && !!DATA && !DEMO }); });
 
 // drag and drop, on the landing card or anywhere on the dashboard (which merges)
 let dragDepth = 0;
@@ -81,7 +94,7 @@ addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
 addEventListener('drop', e => {
   if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('drop').classList.remove('over');
   if (current === 'processing') return;
-  const f = e.dataTransfer.files[0]; if (f) readFile(f, { merge: current === 'app' && !!DATA });
+  const f = e.dataTransfer.files[0]; if (f) readFile(f, { merge: current === 'app' && !!DATA && !DEMO });
 });
 const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
 
@@ -94,8 +107,10 @@ $('menuBtn').addEventListener('click', () => {
   form.sleep.value = t.sleep / 60; form.sleepFloor.value = t.sleepFloor / 60;
   form.steps.value = t.steps; form.exercise.value = t.exercise; form.daylight.value = t.daylight;
   syncUnitSeg();
-  const m = DATA.meta, src = Object.keys(m.sources || {}).length;
-  $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.`;
+  $('setForm').classList.toggle('demo', !!DEMO);
+  if (DEMO) $('dataInfo').textContent = 'You are looking at sample data from a made-up person. Settings you change here are not saved.';
+  const m = (DEMO || DATA).meta, src = Object.keys(m.sources || {}).length;
+  if (!DEMO) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.`;
   disarm();
   dlg.showModal();
 });
@@ -113,9 +128,35 @@ form.addEventListener('submit', async e => {
   const sleep = Math.round(+form.sleep.value * 60), floor = Math.round(+form.sleepFloor.value * 60);
   if (floor > sleep) { form.sleepFloor.setCustomValidity('Must not be above the sleep target'); form.reportValidity(); form.sleepFloor.setCustomValidity(''); return; }
   SET = { units: pendingUnits, targets: { sleep, sleepFloor: floor, steps: +form.steps.value, exercise: +form.exercise.value, daylight: +form.daylight.value } };
-  try { await store.set('settings', SET); } catch (err) {}
+  if (!DEMO) { try { await store.set('settings', SET); } catch (err) {} }
   dlg.close(); openDashboard(); toast('Settings saved.');
 });
+// ---------------------------------------------------------------- poster
+const pdlg = $('poster'); let pYear = null, pTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', pBlob = null, pUrl = null;
+async function drawPoster() {
+  if (!dash) return;
+  if (document.fonts && document.fonts.load) { try { await document.fonts.load('750 40px Figtree'); } catch (e) {} }
+  const cv = dash.renderPoster(pYear, pTheme);
+  pBlob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (pUrl) URL.revokeObjectURL(pUrl); pUrl = URL.createObjectURL(pBlob); $('posterImg').src = pUrl;
+  $('posterYears').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.y === pYear));
+  $('posterTheme').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === pTheme));
+  const file = new File([pBlob], `health-atlas-${pYear}.png`, { type: 'image/png' });
+  $('posterShare').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+}
+$('shareBtn').addEventListener('click', () => {
+  const ys = dash ? dash.posterYears() : []; if (!ys.length) { toast('Not enough data for a poster yet.'); return; }
+  if (!ys.includes(pYear)) pYear = ys[ys.length - 1];
+  const box = $('posterYears'); box.replaceChildren();
+  ys.slice(-4).forEach(y => { const b = document.createElement('button'); b.type = 'button'; b.dataset.y = y; b.textContent = y; b.addEventListener('click', () => { pYear = y; drawPoster(); }); box.appendChild(b); });
+  pdlg.showModal(); drawPoster();
+});
+$('posterTheme').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { pTheme = b.dataset.t; drawPoster(); } });
+$('posterClose').addEventListener('click', () => pdlg.close());
+pdlg.addEventListener('click', e => { if (e.target === pdlg) pdlg.close(); });
+$('posterSave').addEventListener('click', () => { if (!pUrl) return; const a = document.createElement('a'); a.href = pUrl; a.download = `health-atlas-${pYear}.png`; document.body.appendChild(a); a.click(); a.remove(); });
+$('posterShare').addEventListener('click', async () => { try { await navigator.share({ files: [new File([pBlob], `health-atlas-${pYear}.png`, { type: 'image/png' })], title: `My ${pYear} in health` }); } catch (e) {} });
+
 $('addExport').addEventListener('click', () => { dlg.close(); mergeNext = true; $('file').click(); });
 $('saveJson').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(DATA)], { type: 'application/json' });
@@ -137,8 +178,9 @@ $('forget').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- boot
 (async () => {
-  const [d, s] = await Promise.all([store.get('data'), store.get('settings')]);
+  const [d, s] = EMBED ? [null, null] : await Promise.all([store.get('data'), store.get('settings')]);
   if (s && s.targets) SET = { units: s.units, targets: { ...DEFAULT_TARGETS, ...s.targets } };
   if (d) { try { DATA = validateData(d); } catch (e) { DATA = null; } }
-  if (DATA) openDashboard(); else show('landing');
+  if (EMBED || Q.has('demo')) openDemo();
+  else if (DATA) openDashboard(); else show('landing');
 })();

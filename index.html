@@ -54,6 +54,8 @@
         <button class="primary lp-btn" id="pick" type="button"><span>Choose export.zip</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <p class="hint">Also opens <b>export.xml</b> or a saved <b>.json</b> copy.</p>
       </div>
+      <div class="lp-try rv"><button type="button" class="lp-trybtn" id="demoTry">No export handy? <b>See it with sample data</b> <span aria-hidden="true">→</span></button>
+      </div>
       <p class="err" id="err" role="alert" hidden></p>
 
       <ul class="lp-proof rv">
@@ -66,6 +68,26 @@
     <div class="lp-stage" aria-hidden="true">
       <div class="lp-scene"><div class="lp-rig" id="lpRig"></div></div>
       <p class="lp-note">Illustration. Made-up numbers.</p>
+    </div>
+  </section>
+
+  <section class="lp-zoom" id="zoom" aria-label="From one night to four years">
+    <div class="lp-zsticky">
+      <div class="lp-zcopy">
+        <p class="lp-kicker">Zoom out</p>
+        <div class="lp-zcaps">
+          <div class="lp-zcap on"><h2>One night.</h2><p>How long you slept, and how it split into deep, core and REM sleep.</p></div>
+          <div class="lp-zcap"><h2>A week.</h2><p>Every night side by side, against the target you set.</p></div>
+          <div class="lp-zcap"><h2>A year.</h2><p>Nights settle into a trend line, so a slow drift is easy to spot.</p></div>
+          <div class="lp-zcap"><h2>Four years.</h2><p>Seasons, habits and slow changes you would never notice night to night.</p></div>
+        </div>
+        <div class="lp-zsteps" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="lp-zcard" aria-hidden="true">
+        <div class="lp-zhead"><span class="lp-zdot"></span><b>Time asleep</b><span id="lpZRange"></span></div>
+        <canvas id="lpZoom"></canvas>
+        <div class="lp-zfoot"><span class="lp-zleg st"><i class="d"></i>Deep</span><span class="lp-zleg st"><i class="c"></i>Core</span><span class="lp-zleg st"><i class="r"></i>REM</span><span class="lp-zleg nn"><i class="n"></i>Each night</span><span class="lp-zleg tt"><i class="t"></i>Trend</span><span class="lp-znote">Sample data, made-up person</span></div>
+      </div>
     </div>
   </section>
 
@@ -83,6 +105,19 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <section class="lp-live" id="live">
+    <div class="lp-sechead lp-center">
+      <p class="lp-kicker">Try it</p>
+      <h2>The real dashboard, with made-up data.</h2>
+      <p>Scrub any chart, switch from a week to all time, open a chapter. It is exactly what you get with your own export.</p>
+    </div>
+    <div class="lp-frame" id="lpFrame">
+      <div class="lp-fbar"><i></i><i></i><i></i><span>Sample data · a made-up person</span></div>
+      <div class="lp-fwrap" id="lpFwrap"><iframe id="lpLive" title="Live dashboard with sample data" loading="lazy"></iframe></div>
+    </div>
+    <p class="lp-center lp-livecta"><button type="button" class="lp-light2" data-demo>Open the sample dashboard <span aria-hidden="true">→</span></button></p>
   </section>
 
   <section class="lp-private" id="private">
@@ -206,10 +241,12 @@
       <button class="arrow" id="next" aria-label="Next period"><svg width="14" height="14" viewBox="0 0 14 14"><path d="m5 2 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
     <div class="years" id="years" role="group" aria-label="Year"></div>
+    <button class="menubtn" id="shareBtn" type="button" aria-label="Share a poster of your year" title="Share a poster of your year"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 12.5V3.5M6.5 7 10 3.5 13.5 7M4.5 11v4a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="menubtn" id="menuBtn" type="button" aria-label="Settings and data" title="Settings and data"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
   </div>
 </header>
 
+<div class="demobar" id="demoBar" hidden><span><b>Sample data.</b> A made-up person, so you can look around.</span><button type="button" id="demoExit">Open your own export</button></div>
 <div class="shell">
   <nav class="chapters" id="nav" aria-label="Chapters"></nav>
   <main id="main"></main>
@@ -277,6 +314,23 @@
       <button type="submit" class="primary" value="save" id="setSave">Save</button>
     </div>
   </form>
+</dialog>
+
+<!-- ===================== Poster ===================== -->
+<dialog id="poster" aria-labelledby="posterTitle">
+  <div class="sheet psheet">
+    <div class="sh-head"><h2 id="posterTitle">Share your year</h2><button class="xclose" type="button" id="posterClose" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 3l10 10M13 3 3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+    <div class="pctl">
+      <div class="seg" role="group" aria-label="Year" id="posterYears"></div>
+      <div class="seg" role="group" aria-label="Look" id="posterTheme"><button type="button" data-t="light">Light</button><button type="button" data-t="dark">Dark</button></div>
+    </div>
+    <div class="pprev"><img id="posterImg" alt="Poster preview"></div>
+    <p class="small">Made on this device. Nothing is uploaded; you choose where it goes.</p>
+    <div class="sh-foot">
+      <button type="button" class="ghost" id="posterSave">Save image</button>
+      <button type="button" class="primary" id="posterShare" hidden>Share</button>
+    </div>
+  </div>
 </dialog>
 
 <noscript><p style="padding:24px;font:16px system-ui">Health Atlas reads your export with JavaScript, in your browser. Please enable JavaScript.</p></noscript>
