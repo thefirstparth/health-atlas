@@ -48,12 +48,12 @@ const AUDIT = () => {
 const SHELL = () => {
   const issues = [], vw = document.documentElement.clientWidth;
   if (document.documentElement.scrollWidth > vw + 1) issues.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${vw}`);
-  document.querySelectorAll('h1, h2, .lede, .facts b, .facts span, .steps li, .primary, .ghost, .danger, .hint, .fields label, .brandmark b, .pstat, .pfile, .lnk').forEach(e => {
+  document.querySelectorAll('h1, h2, .lede, .lp-lede, .lp-tile .th span, .lp-steps b, .lp-checks li, .lp-nav a, .facts b, .facts span, .steps li, .primary, .ghost, .danger, .hint, .fields label, .brandmark b, .pstat, .pfile, .lnk').forEach(e => {
     const r = e.getBoundingClientRect(); if (!r.width) return;
     if (r.right > vw + 1 || r.left < -1) issues.push(`outside viewport: "${e.textContent.trim().slice(0, 40)}"`);
     if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible' && !e.matches('.pfile')) issues.push(`clipped: "${e.textContent.trim().slice(0, 40)}"`);
   });
-  document.querySelectorAll('.primary, .ghost, .danger').forEach(e => { if (!e.getBoundingClientRect().width) return; const h = e.getBoundingClientRect().height; if (h > 48) issues.push(`button wraps: "${e.textContent.trim()}"`); });
+  document.querySelectorAll('.primary, .ghost, .danger, .lp-mini, .lp-light, .lp-eyebrow, .lp-chip, .lp-proof b, .lp-droptext b').forEach(e => { if (!e.getBoundingClientRect().width) return; const h = e.getBoundingClientRect().height, old = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = old; if (h > h1 + 2) issues.push(`wraps: "${e.textContent.trim()}"`); });
   return issues;
 };
 (async () => {

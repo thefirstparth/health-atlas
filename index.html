@@ -14,53 +14,147 @@
 <link rel="preload" href="assets/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/dashboard.css">
 <link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/landing.css">
 <script type="module" src="src/app.js"></script>
+<script type="module" src="src/landing.js"></script>
 </head>
 <body>
 
 <!-- ===================== Landing ===================== -->
-<div id="landing" class="view" hidden>
-  <header class="lbar">
+<div id="landing" class="view lp" hidden>
+  <div class="lp-bg" aria-hidden="true"><div class="lp-grid"></div></div>
+  <header class="lp-bar">
     <div class="brandmark"><img src="assets/icon.svg" alt="" width="28" height="28"><b>Health Atlas</b></div>
-    <a class="lnk" href="privacy.html">Privacy</a>
+    <nav class="lp-nav" aria-label="Page">
+      <a href="#chapters">What you get</a>
+      <a href="#private">Privacy</a>
+      <a href="#how">Get your export</a>
+    </nav>
+    <button class="lp-mini" type="button" data-pick>Open export</button>
   </header>
-  <main class="land">
-    <section class="intro">
-      <h1>Years of your health data, laid out clearly.</h1>
-      <p class="lede">Open the export from the Health app on your iPhone and see sleep, heart, activity, workouts and more, day by day and year by year. Your file is read here, in your browser. It is never uploaded.</p>
-      <div class="drop" id="drop" tabindex="-1">
+
+  <section class="lp-hero">
+    <div class="lp-copy">
+      <div class="lp-eyebrow rv"><i></i>Read on your device. Never uploaded.</div>
+      <h1 class="lp-h1" aria-label="Years of your health, finally legible.">
+        <span class="w"><span>Years</span></span> <span class="w"><span>of</span></span> <span class="w"><span>your</span></span> <span class="w"><span>health,</span></span>
+        <span class="w"><span>finally</span></span> <span class="w em"><span>legible.</span></span>
+      </h1>
+      <p class="lp-lede rv">Drop in the export from the Health app and get sleep, heart, activity, workouts and more as calm, precise charts. Day by day, year by year. Your file never leaves this browser.</p>
+
+      <div class="drop lp-drop rv" id="drop" tabindex="-1">
         <input type="file" id="file" accept=".zip,.xml,.json,application/zip,text/xml,application/json" hidden>
-        <button class="primary" id="pick" type="button">Choose export.zip</button>
-        <p class="hint">or drop it here · works with <b>export.zip</b>, <b>export.xml</b>, or a <b>.json</b> copy saved from this site</p>
+        <div class="lp-file" aria-hidden="true">
+          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M19 10h4M23 14h4M19 18h4M23 22h4M19 26h4"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></svg>
+        </div>
+        <div class="lp-droptext">
+          <b>Drop <span class="mono">export.zip</span> here</b>
+          <span>or choose it from Files, Finder or Downloads</span>
+        </div>
+        <button class="primary lp-btn" id="pick" type="button"><span>Choose export.zip</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <p class="hint">Also opens <b>export.xml</b>, or a <b>.json</b> copy saved from this site.</p>
       </div>
       <p class="err" id="err" role="alert" hidden></p>
-      <ul class="facts">
-        <li><b>Stays on this device</b><span>Read and stored only in this browser. No account, no server, no tracking.</span></li>
-        <li><b>Trends, not noise</b><span>Smoothed trend lines, comparisons with last month and last year, every reading one tap away.</span></li>
-        <li><b>Targets you set</b><span>Sleep, steps, exercise and daylight, shown as chains and shortfalls rather than averages.</span></li>
+
+      <ul class="lp-proof rv">
+        <li><b data-count="0">0</b><span>bytes uploaded</span></li>
+        <li><b data-count="0">0</b><span>accounts or trackers</span></li>
+        <li><b data-count="9">9</b><span>chapters of your data</span></li>
       </ul>
-    </section>
-    <aside class="how card">
-      <h2>Get your export</h2>
-      <ol class="steps">
-        <li><span>1</span><div><b>Open the Health app</b> on your iPhone.</div></li>
-        <li><span>2</span><div>Tap your <b>picture or initials</b> at the top right.</div></li>
-        <li><span>3</span><div>Scroll down, tap <b>Export All Health Data</b>, then <b>Export</b>. Several years can take a few minutes.</div></li>
-        <li><span>4</span><div>Choose <b>Save to Files</b>, or AirDrop it to your Mac. Then choose it on this page.</div></li>
-      </ol>
-      <p class="small">A few years of Apple Watch data is usually 20–100 MB zipped and takes 10–60 seconds to read. A computer is fastest; recent iPhones work too.</p>
-      <h2 class="h2b">Private by design</h2>
-      <ul class="plist">
-        <li>The site is static files. There is no server code that could receive your data.</li>
-        <li>Its security policy forbids the page from making network requests, so it could not send your data even by mistake.</li>
-        <li>Check it yourself: load this page, turn on Airplane Mode, then choose your file.</li>
+    </div>
+
+    <div class="lp-stage" aria-hidden="true">
+      <div class="lp-scene"><div class="lp-rig" id="lpRig"></div></div>
+      <p class="lp-note">Illustration. Made-up numbers.</p>
+    </div>
+  </section>
+
+  <section class="lp-explode" id="chapters">
+    <div class="lp-sticky">
+      <div class="lp-sechead">
+        <p class="lp-kicker">What you get</p>
+        <h2>One file in.<br>Nine chapters out.</h2>
+        <p>Every measure your Apple Watch and iPhone recorded, sorted into chapters, smoothed into trends and compared with last month and last year.</p>
+      </div>
+      <div class="lp-tiles" id="lpTiles">
+        <div class="lp-zip" id="lpZip" aria-hidden="true">
+          <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M19 10h4M23 14h4M19 18h4M23 22h4M19 26h4"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></svg>
+          <b>export.zip</b><span>years of readings</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-private" id="private">
+    <div class="lp-pcopy">
+      <p class="lp-kicker">Private by design</p>
+      <h2>Your data stays on your side of the glass.</h2>
+      <ul class="lp-checks">
+        <li><i></i><div><b>No server to send it to.</b> The site is a handful of static files. There is no backend, database or account.</div></li>
+        <li><i></i><div><b>Blocked from the network.</b> The page's security policy includes <code>connect-src 'none'</code>, so the browser refuses every request it tries to make.</div></li>
+        <li><i></i><div><b>Check it yourself.</b> Load this page, switch on Airplane Mode, then open your export. Everything still works.</div></li>
+        <li><i></i><div><b>Gone when you say so.</b> Forget my data deletes it from this browser in one tap.</div></li>
       </ul>
-      <p class="small"><a href="privacy.html">Read the privacy details</a></p>
-    </aside>
-  </main>
-  <footer class="lfoot">
+      <a class="lp-link" href="privacy.html">Read the privacy details <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="lp-pscene" aria-hidden="true">
+      <svg viewBox="0 0 560 400" class="lp-psvg">
+        <defs>
+          <clipPath id="lpInside"><rect x="36" y="36" width="300" height="328" rx="34"/></clipPath>
+        </defs>
+        <rect class="dev" x="36" y="36" width="300" height="328" rx="34"/>
+        <text class="lab" x="64" y="76">THIS BROWSER</text>
+        <g class="flow" clip-path="url(#lpInside)">
+          <path class="track" d="M112 206 H258"/>
+          <path class="dash" d="M112 206 H258"/>
+        </g>
+        <g class="pfile" transform="translate(76 170)"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><rect class="fr" x="18" y="30" width="10" height="9" rx="2.5"/></g>
+        <text class="cap" x="98" y="252" text-anchor="middle">export.zip</text>
+        <g class="pchart" transform="translate(246 168)">
+          <rect x="0" y="0" width="64" height="76" rx="14" class="pcard"/>
+          <rect x="12" y="44" width="7" height="20" rx="2.5" class="b1"/><rect x="23" y="34" width="7" height="30" rx="2.5" class="b2"/><rect x="34" y="40" width="7" height="24" rx="2.5" class="b1"/><rect x="45" y="26" width="7" height="38" rx="2.5" class="b2"/>
+          <path d="M12 26 C22 18 34 22 52 12" class="pl"/>
+        </g>
+        <text class="cap" x="278" y="266" text-anchor="middle">your charts</text>
+        <text class="cap2" x="186" y="330" text-anchor="middle">read and stored on this device</text>
+        <g class="leak">
+          <circle class="pk k1" cx="340" cy="206" r="4.5"/><circle class="pk k2" cx="340" cy="206" r="4.5"/><circle class="pk k3" cx="340" cy="206" r="4.5"/>
+        </g>
+        <line class="wall" x1="392" y1="120" x2="392" y2="292"/>
+        <g class="xmark" transform="translate(392 206)"><circle r="17"/><path d="M-6 -6 6 6M6 -6 -6 6"/></g>
+        <text class="wlab" x="392" y="318" text-anchor="middle">connect-src 'none'</text>
+        <g class="net" transform="translate(474 206)"><circle r="44" class="netc"/><path d="M-44 0H44M0 -44C-18 -26 -18 26 0 44M0 -44C18 -26 18 26 0 44M-38 -22H38M-38 22H38" class="netl"/></g>
+        <text class="cap" x="474" y="274" text-anchor="middle">the internet</text>
+      </svg>
+    </div>
+  </section>
+
+  <section class="lp-how" id="how">
+    <div class="lp-sechead lp-center">
+      <p class="lp-kicker">Get your export</p>
+      <h2>Four taps on your iPhone.</h2>
+    </div>
+    <ol class="lp-steps">
+      <li class="rv"><span class="n">1</span><b>Open the Health app</b><p>On your iPhone.</p></li>
+      <li class="rv"><span class="n">2</span><b>Tap your picture</b><p>Or your initials, at the top right.</p></li>
+      <li class="rv"><span class="n">3</span><b>Export All Health Data</b><p>Scroll to the bottom, tap it, then Export. Several years can take a few minutes.</p></li>
+      <li class="rv"><span class="n">4</span><b>Open it here</b><p>Save to Files, or AirDrop it to your Mac, then choose it on this page.</p></li>
+    </ol>
+    <p class="lp-fine lp-center">A few years of Apple Watch data is usually 20–100 MB zipped and takes 10–60 seconds to read. A computer is fastest; recent iPhones work too.</p>
+  </section>
+
+  <section class="lp-final">
+    <div class="lp-finalcard">
+      <div class="lp-finalline" aria-hidden="true"><svg viewBox="0 0 1000 200" preserveAspectRatio="none"><path d="M0 150 C120 150 160 90 260 100 S420 160 520 120 S700 40 800 60 S930 30 1000 20"/></svg></div>
+      <h2>See your years, clearly.</h2>
+      <p>No account. No upload. Just your data, laid out.</p>
+      <button class="lp-light" type="button" data-pick>Choose export.zip</button>
+    </div>
+  </section>
+
+  <footer class="lp-foot">
     <span>Not medical advice. Charts show what your devices recorded; talk to a clinician about your health.</span>
-    <span>Not affiliated with or endorsed by Apple. Apple Watch, iPhone and Health are trademarks of Apple Inc.</span>
+    <span>Not affiliated with or endorsed by Apple. Apple Watch, iPhone and Health are trademarks of Apple Inc. · <a href="privacy.html">Privacy</a></span>
   </footer>
 </div>
 
