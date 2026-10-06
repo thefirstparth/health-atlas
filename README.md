@@ -1,5 +1,7 @@
 # Health Atlas
 
+Built by Parth Bhatia (https://bhatia.page).
+
 See years of your Apple Health export as clear charts: sleep, heart, stress and recovery, activity, workouts, mobility, environment and body, by week, month, 6 months, year and all time.
 
 The site runs entirely in your browser. You choose your `export.zip`, the page reads it on your device, and the result is kept in the browser's own storage. There is no server code, no account, no analytics, and a Content-Security-Policy with `connect-src 'none'` stops the page from making any network request.
