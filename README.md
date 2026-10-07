@@ -16,8 +16,9 @@ The site runs entirely in your browser. You choose your `export.zip`, the page r
 | `src/parser.js` | Streaming unzip (native `DecompressionStream`) and a hand-written XML tokenizer. Never resolves DTD entities. Keeps about 30 MB in memory for an 800 MB `export.xml` |
 | `src/validate.js` | Structural check for stored data and imported `.json` copies |
 | `src/dashboard.js` | The dashboard (overview rules, charts, scrubbing, tapestry, calendars, records, poster) |
+| `src/compare.js` | Compare mode: two or three people on one timeline, built from the dashboard's own chart helpers |
 | `src/icons.js` | The chapter line icons, shared by the dashboard and the home page |
-| `src/sample.js` | Sample data for the demo (`?demo`) and the home page. Made up, never stored |
+| `src/sample.js` | Sample data for the demo (`?demo`), the compare demo (`?demo=compare`) and the home page. Made up, never stored |
 | `src/landing.js` | Home page: the sleep recorder figure, the zoom-out story, chapters and the live demo |
 | `assets/fonts/` | Figtree (text), Newsreader (headlines) and IBM Plex Mono (labels), self-hosted under the OFL |
 | `vercel.json` | Security headers (CSP and others) for every path |
@@ -48,6 +49,28 @@ The Overview shows counts, averages and comparisons only. Nothing is estimated o
 - **Targets.** The last 8 weeks against the targets in Settings.
 - **Your week, by weekday.** Averages for each weekday over the last 12 weeks.
 
+## Compare with friends
+
+Open two or three exports at once ("Comparing with friends?" on the home page, **Compare with friends** in Settings, or drop several files) and give each one a name. Each file is read on the device by the same worker, one after another; your own stored data can be one of the people. A sample comparison of three made-up people is at `?demo=compare`.
+
+How the comparison is drawn:
+
+- **One colour per person, everywhere.** Blue, orange and aqua, checked for colour-vision deficiency against both the light and dark card colours. Colour is never the only cue: every line ends in the person's name and every chart has a legend.
+- **Simple measures share one chart.** Steps, heart rate, sleep length and the rest show one trend line per person (Week view shows each day side by side instead). The rail beside the chart ranks people, says in one sentence who is ahead and by how much, and shows how many days each average rests on. A strip under the chart marks who did better in each week, month or year.
+- **Composite charts get a row or column per person.** Sleep schedule (one bar per person), every night bed to wake (one column per person, rows aligned by date) and sleep stages (one 100% bar per person) would tangle if overlaid.
+- **Body is left out.** Weight and blood pressure are personal and not a fair comparison.
+
+Missing data:
+
+- Everyone is laid on one timeline, from the earliest start to the latest end. Days outside someone's export are empty, never zero, so their line simply stops.
+- The first view ends on the last day everyone has data, so the opening comparison is fair.
+- When someone has nothing for a period the reason is shown: export starts later, export ends earlier, or not recorded (an iPhone without a Watch has no sleep, heart or workouts).
+- An average resting on under half of the days in the period is marked in red.
+- **Days everyone recorded** narrows every daily measure to days that all visible people have it, so nobody is averaged over a different set of days. A measure only one person records is left as it is.
+- People can be hidden with their chip; colours never move.
+
+The same export added twice is refused, names must differ, and friends' exports stay in this browser until **End comparison** or **Forget my data**.
+
 ## Run locally
 
 ```sh
@@ -71,6 +94,8 @@ node test/run-node.mjs test/fixtures/watch.zip /tmp/d.json && node test/layout_a
 node test/homepage_qa.cjs /tmp/hpqa                     # home page: automated checks + screenshots, 4 widths x 2 themes
 node test/dashboard_qa.cjs /tmp/d.json /tmp/dqa         # dashboard's newer pieces: screenshots for a visual pass
 node test/demo_flow.cjs                                 # sample data is never stored and never replaces real data
+node test/compare_flow.cjs test/fixtures                # compare: naming, reading, reload, rename, bad and duplicate files, end
+COMPARE=1 node test/layout_audit_app.cjs /tmp/d.json    # the layout audit, walking compare mode (sample people)
 ```
 
 `layout_audit_app.cjs` walks every view, recent year and chapter at four widths in light and dark mode, and must report `0` issues before deploying.

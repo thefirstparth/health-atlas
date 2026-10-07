@@ -26,12 +26,12 @@ export function compareKit(K) {
     for (let i = 0; i <= LAST; i++) pres[i + 1] = pres[i] + any[i];
     P.any = any; P.pres = pres;
   });
-  // the shortest label that tells people apart: initials, or two letters when initials clash
-  { const ini = n => (n.trim()[0] || '?').toUpperCase(), two = n => n.trim().slice(0, 2);
-    const clash = new Set(PEOPLE.map(P => ini(P.name))).size < PEOPLE.length;
-    PEOPLE.forEach((P, k) => { P.short = clash ? (new Set(PEOPLE.map(Q => two(Q.name))).size === PEOPLE.length ? two(P.name) : String(k + 1)) : ini(P.name); });
-    // line labels carry the whole name when every name is short enough, else the short label
-    const full = PEOPLE.every(P => P.name.trim().length <= 10); PEOPLE.forEach(P => { P.tag = full ? P.name.trim() : P.short; }); }
+  // the shortest label that tells people apart (for the strip): initials, else 2-4 letters, else numbers
+  { const nm = PEOPLE.map(P => P.name.trim()), len = [1, 2, 3, 4].find(n => new Set(nm.map(x => x.slice(0, n).toLowerCase())).size === nm.length);
+    PEOPLE.forEach((P, k) => { const t = nm[k].slice(0, len || 0); P.short = len ? t[0].toUpperCase() + t.slice(1) : String(k + 1); });
+    // line labels: the name, or its first word cut to 10 characters, unless that stops telling people apart
+    const tag = n => n.length <= 10 ? n : (n.split(/\s+/)[0].slice(0, 10) + (n.split(/\s+/)[0].length > 10 ? '…' : ''));
+    const tags = nm.map(tag), ok = new Set(tags).size === tags.length; PEOPLE.forEach((P, k) => { P.tag = ok ? tags[k] : P.short; }); }
   // workouts: someone whose export has none at all did not record them (an iPhone without a Watch, say)
   PEOPLE.forEach(P => { P.noWk = !P.D.workouts.length; });
   if (!S.hide) S.hide = new Set();
@@ -64,9 +64,9 @@ export function compareKit(K) {
     return (SHC[id] || (SHC[id] = sharedStats(list)))[P.k] || P.raw;
   }
   // why a person has nothing to show for a window
-  function why(P, a, e) {
-    if (a > P.D.to) return `Export ends ${dShort(P.D.to)}, ${dYr(P.D.to)}`;
-    if (e < P.D.from) return `Export starts ${dShort(P.D.from)}, ${dYr(P.D.from)}`;
+  function why(P, a, e, short) {
+    if (a > P.D.to) return short ? `Ends ${MON[dt(P.D.to).getUTCMonth()]} ${dYr(P.D.to)}` : `Export ends ${dShort(P.D.to)}, ${dYr(P.D.to)}`;
+    if (e < P.D.from) return short ? `Starts ${MON[dt(P.D.from).getUTCMonth()]} ${dYr(P.D.from)}` : `Export starts ${dShort(P.D.from)}, ${dYr(P.D.from)}`;
     return S.shared ? 'No shared days' : 'Not recorded';
   }
   const dotName = (P, extra) => { const s = el('span', 'pname'); const i = el('i'); i.style.background = col(P); s.append(i, el('span', null, P.name)); if (extra) s.appendChild(extra); return s; };
@@ -84,7 +84,8 @@ export function compareKit(K) {
     const word = kind === 'clock' ? '' : kind === 'pct' || kind === 'dur' ? ' more' : ' higher';
     return `${hi.P.name} ${verb} ${info.txt}${word} than ${lo.P.name}.`;
   }
-  const covText = (n, total, night) => `${n} of ${total} ${night ? 'nights' : 'days'}`;
+  const covText = (n, total) => `${n} of ${total}`;
+  const covNote = (rail, def, total) => rail.appendChild(el('div', 'meta', `Right column: ${def.night ? 'nights' : 'days'} with data, of the ${total} in this period. Each average uses only those.`));
   // ranked rows: best first where there is a better direction, else highest first
   function rankRows(rail, def, list, opts = {}) {
     const dir = def.dir || 1;
@@ -107,7 +108,9 @@ export function compareKit(K) {
   // name pills at the end of each line, pushed apart so they never overlap
   function endLabels(F, ends) {
     const h = 20, gap = 3, f = `700 11px ${font()}`;
-    const L = ends.filter(Boolean).map(x => ({ ...x, w: tw(x.text, f) + 16 })).sort((a, b) => a.y - b.y);
+    // narrow charts (phones) use the short label so the pills do not cover the last stretch of the lines
+    const narrow = F.pw < 480, txt = x => narrow && x.P ? x.text.replace(x.P.tag, x.P.short) : x.text;
+    const L = ends.filter(Boolean).map(x => ({ ...x, text: txt(x), w: tw(txt(x), f) + 16 })).sort((a, b) => a.y - b.y);
     L.forEach(l => { l.side = l.x + 12 + l.w <= F.pw ? 1 : -1; l.cy = l.y; });
     for (let k = 1; k < L.length; k++) if (L[k].cy - L[k - 1].cy < h + gap) L[k].cy = L[k - 1].cy + h + gap;
     const maxY = F.base - h / 2; for (let k = L.length - 1; k >= 0; k--) { if (L[k].cy > maxY) L[k].cy = maxY; if (k && L[k].cy - L[k - 1].cy < h + gap) L[k - 1].cy = L[k].cy - h - gap; }
@@ -180,7 +183,7 @@ export function compareKit(K) {
         runs(pts, 1).forEach(r => r.length > 1 && sv('path', { d: poly(r), fill: 'none', stroke: s.c, 'stroke-width': 2, 'stroke-linejoin': 'round', class: 'draw' }, F.g));
         pts.forEach(pt => pt && sv('circle', { cx: pt[0], cy: pt[1], r: 4.5, fill: s.c, stroke: surf, 'stroke-width': 2, class: 'draw' }, F.g));
         const lj = s.bv.map((v, j) => v == null ? -1 : j).filter(j => j >= 0).pop();
-        if (lj != null) ends.push({ x: F.x(bks[lj].s), y: F.y(s.bv[lj]), c: s.c, text: `${s.P.tag} ${U[def.u].c(s.bv[lj])}` });
+        if (lj != null) ends.push({ x: F.x(bks[lj].s), y: F.y(s.bv[lj]), c: s.c, P: s.P, text: `${s.P.tag} ${U[def.u].c(s.bv[lj])}` });
       });
       bks.forEach((bk, j) => targets.push({ x: F.x(bk.s), bk, j, dots: ser.map(s => s.bv[j] == null ? null : { y: F.y(s.bv[j]), c: s.c }).filter(Boolean) }));
     } else {
@@ -194,7 +197,7 @@ export function compareKit(K) {
           requestAnimationFrame(() => { if (ln.closest('.zooming')) return; try { ln.style.setProperty('--len', ln.getTotalLength()); ln.classList.add('trace'); } catch (er) {} });
         }
         let li = -1; for (let i = e; i >= a0; i--) if (s.T[i] != null) { li = i; break; }
-        if (li >= 0) { sv('circle', { cx: F.x(li), cy: F.y(s.T[li]), r: 4.5, fill: s.c, stroke: surf, 'stroke-width': 2 }, F.g); ends.push({ x: F.x(li), y: F.y(s.T[li]), c: s.c, text: `${s.P.tag} ${U[def.u].c(s.T[li])}` }); }
+        if (li >= 0) { sv('circle', { cx: F.x(li), cy: F.y(s.T[li]), r: 4.5, fill: s.c, stroke: surf, 'stroke-width': 2 }, F.g); ends.push({ x: F.x(li), y: F.y(s.T[li]), c: s.c, P: s.P, text: `${s.P.tag} ${U[def.u].c(s.T[li])}` }); }
       });
       bks.forEach((bk, j) => { const m = Math.min(Math.round((bk.s + bk.e) / 2), e); targets.push({ x: F.x((bk.s + bk.e) / 2), bk, j, dots: ser.map(s => m >= a0 && s.T[m] != null ? { y: F.y(s.T[m]), c: s.c } : null).filter(Boolean) }); });
     }
@@ -215,12 +218,13 @@ export function compareKit(K) {
     const def = typeof defIn === 'string' ? DEF[defIn] : { ...(DEF[defIn.key] || {}), ...defIn };
     if (def.k === 'points') return pointsBand(def, view, p);
     const e = Math.min(p.b, LAST), isCount = def.k === 'count', list = vis(), total = daysIn(p);
-    const vals = list.map(P => { const r = st(P).win(def.key, p.a, e); return { P, v: isCount ? (r.n ? r.sum : null) : r.v, n: isCount ? presDays(P, p.a, e) : r.n, why: why(P, p.a, e) }; });
+    const vals = list.map(P => { const r = st(P).win(def.key, p.a, e); return { P, v: isCount ? (r.n ? r.sum : null) : r.v, n: isCount ? presDays(P, p.a, e) : r.n, why: why(P, p.a, e, true) }; });
     if (!vals.some(x => x.v != null)) return { missing: def.t };
     const B = band(def, css('--ink-3'));
     const h = el('div', 'hero'); h.appendChild(el('div', 'lab', railLabel(def) + ' · ' + periodLabel(view, p))); B.rail.appendChild(h);
-    rankRows(B.rail, def, vals, { total: isCount ? 0 : total, cov: x => isCount ? `${x.n} days recorded` : covText(x.n, total, def.night) });
+    rankRows(B.rail, def, vals, { total: isCount ? 0 : total, cov: x => covText(x.n, total) });
     const sm = summary(def, vals, isCount); if (sm) B.rail.appendChild(el('p', 'cmpsum', sm));
+    if (isCount) B.rail.appendChild(el('div', 'meta', `Right column: days with any data, of the ${total} in this period.`)); else covNote(B.rail, def, total);
     const b = chartBox(), lg = el('div'); B.main.append(b, lg);
     mount(b, bx => {
       const info = drawCmp(bx, def, view, p, list); if (!info) { bx.replaceChildren(el('div', 'empty', 'Nothing recorded in this period.')); return; }
@@ -242,7 +246,7 @@ export function compareKit(K) {
   }
   function pointsBand(def, view, p) {
     const e = Math.min(p.b, LAST), a0 = Math.max(p.a, 0), list = vis(), cfg = VC[view];
-    const per = list.map(P => { const all = st(P).PTS[def.key] || [], inP = all.filter(q => q.i >= a0 && q.i <= e); return { P, all, inP, v: inP.length ? inP.reduce((s, q) => s + q.v, 0) / inP.length : null, n: inP.length, why: all.length ? (inP.length ? '' : 'No readings in period') : 'Not recorded' }; });
+    const per = list.map(P => { const all = st(P).PTS[def.key] || [], inP = all.filter(q => q.i >= a0 && q.i <= e); return { P, all, inP, v: inP.length ? inP.reduce((s, q) => s + q.v, 0) / inP.length : null, n: inP.length, why: all.length ? (inP.length ? '' : 'None in period') : 'Not recorded' }; });
     if (!per.some(x => x.all.length)) return null;
     if (!per.some(x => x.n)) return { missing: def.t };
     const B = band(def, css('--ink-3'));
@@ -260,10 +264,10 @@ export function compareKit(K) {
           const pts = s.T.map((v, j) => v == null ? null : [F.x(a0 + j), F.y(v)]);
           runs(pts, 1).forEach(r => { if (r.length < 2) return; sv('path', { d: poly(r), fill: 'none', stroke: surf, 'stroke-width': 6, 'stroke-linecap': 'round' }, F.g); sv('path', { d: poly(r), fill: 'none', stroke: s.c, 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, F.g); });
           const lj = s.T.map((v, j) => v == null ? -1 : j).filter(j => j >= 0).pop();
-          if (lj != null) ends.push({ x: F.x(a0 + lj), y: F.y(s.T[lj]), c: s.c, text: `${s.P.tag} ${U[def.u].c(s.T[lj])}` });
+          if (lj != null) ends.push({ x: F.x(a0 + lj), y: F.y(s.T[lj]), c: s.c, P: s.P, text: `${s.P.tag} ${U[def.u].c(s.T[lj])}` });
         } else {
           if (s.inP.length > 1) sv('path', { d: poly(s.inP.map(q => [F.x(q.i), F.y(q.v)])), fill: 'none', stroke: s.c, 'stroke-width': 1.5, 'stroke-opacity': .55 }, F.g);
-          const q = s.inP[s.inP.length - 1]; ends.push({ x: F.x(q.i), y: F.y(q.v), c: s.c, text: `${s.P.tag} ${U[def.u].c(q.v)}` });
+          const q = s.inP[s.inP.length - 1]; ends.push({ x: F.x(q.i), y: F.y(q.v), c: s.c, P: s.P, text: `${s.P.tag} ${U[def.u].c(q.v)}` });
         }
       });
       endLabels(F, ends);
@@ -309,11 +313,12 @@ export function compareKit(K) {
     const B = band(def, css('--ink-3'));
     const rowsD = list.map(P => { const s = st(P); return { P, bed: s.win('sl_bed', p.a, e), wake: s.win('sl_wake', p.a, e), mid: s.win('sl_mid', p.a, e), qb: s.quantiles('sl_bed', p.a, e, [.25, .75]), qw: s.quantiles('sl_wake', p.a, e, [.25, .75]) }; }).filter(r => r.bed.n);
     const h = el('div', 'hero'); h.appendChild(el('div', 'lab', 'Average night · ' + periodLabel(view, p))); B.rail.appendChild(h);
-    rows(B.rail, rowsD.map(r => ({ l: dotName(r.P), v: `${fmtClock(r.bed.v)} → ${fmtClock(r.wake.v)}`, x: el('span', 'd', covText(r.bed.n, total, true)) }))).classList.add('crows');
+    rows(B.rail, rowsD.map(r => ({ l: dotName(r.P), v: `${fmtClock(r.bed.v)} → ${fmtClock(r.wake.v)}`, x: el('span', 'd', covText(r.bed.n, total)) }))).classList.add('crows');
     if (rowsD.length > 1) {
       const late = rowsD.reduce((a, b) => b.bed.v > a.bed.v ? b : a), early = rowsD.reduce((a, b) => b.bed.v < a.bed.v ? b : a), d = late.bed.v - early.bed.v;
       B.rail.appendChild(el('p', 'cmpsum', d < 5 ? 'Everyone goes to sleep at about the same time.' : `${late.P.name} falls asleep ${fmtDur(d)} later than ${early.P.name}, on average.`));
     }
+    covNote(B.rail, { night: true }, total);
     const b = chartBox(); B.main.appendChild(b);
     B.main.appendChild(legend([{ t: 'Average bedtime to wake time', c: css('--ink-3') }, { t: 'Middle half of bedtimes / wake times', c: css('--ink-3'), op: .3 }, { t: 'Midpoint', cls: 'hl' }]));
     mount(b, bx => {
@@ -325,7 +330,8 @@ export function compareKit(K) {
       const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': 'Sleep schedule by person' }); bx.replaceChildren(svg);
       const ax = sv('g', { class: 'ax' }, svg), lw = tw('00:00', `500 11px ${font()}`) + 10;
       let step = 60; while ((hi - lo) / step * lw > pw) step += 60;
-      for (let m = Math.ceil(lo / step) * step; m <= hi; m += step) { const X = x(m); sv('line', { class: 'gl', x1: X, x2: X, y1: top, y2: top + rowsD.length * rh }, ax); const t = sv('text', { x: Math.max(0, Math.min(pw - lw + 10, X - (lw - 10) / 2)), y: H - 8 }, ax); t.textContent = K.hhmm(m); }
+      let lastR = -1e9;
+      for (let m = Math.ceil(lo / step) * step; m <= hi; m += step) { const X = x(m); sv('line', { class: 'gl', x1: X, x2: X, y1: top, y2: top + rowsD.length * rh }, ax); const L = Math.max(0, Math.min(pw - lw + 10, X - (lw - 10) / 2)); if (L < lastR + 6) continue; const t = sv('text', { x: L, y: H - 8 }, ax); t.textContent = K.hhmm(m); lastR = L + lw - 10; }
       const targets = [];
       rowsD.forEach((r, k) => {
         const c = col(r.P), cy = top + k * rh + rh / 2, bh = 14;
@@ -355,11 +361,11 @@ export function compareKit(K) {
     const B = band(def, css('--ink-3'));
     const h = el('div', 'hero'); h.appendChild(el('div', 'lab', 'Typical night · ' + periodLabel(view, p))); B.rail.appendChild(h);
     const FL = DEF.sl_asleep.floor;
-    rows(B.rail, cols.map(c => { const w = c.r.filter(x => x.bed != null), under = weekly ? null : w.filter(x => x.asl != null && x.asl < FL).length; return { l: dotName(c.P), v: `${fmtClock(med(w.map(x => x.bed)))}–${fmtClock(med(w.map(x => x.wake)))}`, x: el('span', 'd', under == null ? `${w.length} weeks` : `${under} of ${w.length} under ${hTxt(FL)}`) }; })).classList.add('crows');
+    rows(B.rail, cols.map(c => { const w = c.r.filter(x => x.bed != null), under = weekly ? null : w.filter(x => x.asl != null && x.asl < FL).length; return { l: dotName(c.P), v: `${fmtClock(med(w.map(x => x.bed)))}–${fmtClock(med(w.map(x => x.wake)))}`, x: el('span', 'd', under == null ? `${w.length} weeks` : `${under} under ${hTxt(FL)}`) }; })).classList.add('crows');
     const b = chartBox(); B.main.appendChild(b);
     B.main.appendChild(personLegend(cols.map(c => c.P)));
     mount(b, bx => {
-      const W = Math.max(bx.clientWidth, 260), lab = 46, gapC = 14, n = rowsIdx.length, top = 26, nc = cols.length;
+      const n = rowsIdx.length, W = Math.max(bx.clientWidth, 260), lab = n <= 14 ? 58 : 46, gapC = 14, top = 26, nc = cols.length;
       const cw = (W - lab - gapC * (nc - 1)) / nc, ph = Math.max(150, Math.min(360, n * 9)), rh = ph / n, H = top + ph + 24;
       const beds = cols.flatMap(c => c.r.map(x => x.bed)).filter(v => v != null).sort((x, y) => x - y), wakes = cols.flatMap(c => c.r.map(x => x.wake)).filter(v => v != null).sort((x, y) => x - y);
       const qv = (v, f) => v[Math.min(v.length - 1, Math.floor(f * (v.length - 1)))];
@@ -417,14 +423,14 @@ export function compareKit(K) {
   function workoutsChapter(root, view, p) {
     const e = Math.min(p.b, LAST), a0 = Math.max(p.a, 0), list = vis(), total = daysIn(p);
     const ws = P => st(P).WK.filter(w => w.i >= a0 && w.i <= e);
-    const per = list.map(P => { const w = ws(P); return { P, w, v: !P.noWk && (w.length || presDays(P, a0, e)) ? w.reduce((s, x) => s + x.min, 0) : null, n: w.length, why: P.noWk ? 'No workouts in this export' : why(P, a0, e) }; });
+    const per = list.map(P => { const w = ws(P); return { P, w, v: !P.noWk && (w.length || presDays(P, a0, e)) ? w.reduce((s, x) => s + x.min, 0) : null, n: w.length, why: P.noWk ? 'Not recorded' : why(P, a0, e, true) }; });
     const anyW = per.some(x => x.n);
     if (!anyW) { root.appendChild(el('div', 'missing', 'No workouts were recorded in this period by anyone shown.')); return; }
     const def = { key: '_workouts', t: 'Workout time', u: 'dur', dir: 1, ex: 'Minutes of recorded workouts. Common guidance is 150 minutes or more of moderate activity a week.' };
     {
       const B = band(def, css('--ink-3'));
       const h = el('div', 'hero'); h.appendChild(el('div', 'lab', 'Total time · ' + periodLabel(view, p))); B.rail.appendChild(h);
-      rankRows(B.rail, def, per, { fmt: v => [fmtDur(v), ''], cov: x => `${x.n} session${x.n === 1 ? '' : 's'}` });
+      rankRows(B.rail, def, per, { fmt: v => [fmtDurC(v), ''], cov: x => `${x.n} session${x.n === 1 ? '' : 's'}` });
       const sm = summary({ ...def, t: 'workouts' }, per, true); if (sm) B.rail.appendChild(el('p', 'cmpsum', sm));
       const b = chartBox(); B.main.appendChild(b);
       B.main.appendChild(personLegend(per.filter(x => x.v != null).map(x => x.P), [{ t: `Total each ${GNAME[CG[view]]}`, c: css('--ink-3') }]));
