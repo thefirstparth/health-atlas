@@ -2,11 +2,11 @@
 import { mountDashboard, DEFAULT_TARGETS } from './dashboard.js';
 import * as store from './store.js';
 import { validateData } from './validate.js';
-import { sampleData } from './sample.js';
+import { sampleData, samplePeople } from './sample.js';
 
 const $ = id => document.getElementById(id);
 const VIEWS = ['landing', 'processing', 'app'];
-let DATA = null, DEMO = null, SET = { targets: { ...DEFAULT_TARGETS } }, dash = null, current = null, prevView = 'landing';
+let DATA = null, DEMO = null, CMP = null, SET = { targets: { ...DEFAULT_TARGETS } }, dash = null, current = null, prevView = 'landing';
 const Q = new URLSearchParams(location.search), EMBED = Q.has('embed');
 if (EMBED) document.documentElement.classList.add('embed');
 
@@ -22,16 +22,29 @@ function toast(msg, ms = 3200) {
   document.body.appendChild(t); setTimeout(() => t.remove(), ms);
 }
 const mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.max(0.1, n / 1e6).toFixed(n < 1e7 ? 1 : 0) + ' MB';
-const units = () => SET.units || ((DEMO || DATA) && (DEMO || DATA).meta.unitsHint) || (/^en-(US|LR|MM)$/.test(navigator.language || '') ? 'imperial' : 'metric');
+// CMP: a comparison of two or three people, { people: [{ name, data } | { name, own: true }], demo? }.
+// "own" means your own stored data, so a newer export of yours flows into the comparison too.
+const cmpPeople = () => CMP ? CMP.people.map(x => ({ name: x.name, data: x.own ? DATA : x.data })).filter(x => x.data) : [];
+const shown = () => DEMO || (CMP && cmpPeople()[0] ? cmpPeople()[0].data : null) || DATA;
+const units = () => SET.units || (shown() && shown().meta.unitsHint) || (/^en-(US|LR|MM)$/.test(navigator.language || '') ? 'imperial' : 'metric');
+const listNames = a => a.length < 3 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
 
 function openDashboard() {
   if (dash) { dash.destroy(); dash = null; }
+  if (CMP && cmpPeople().length < 2) CMP = null;
   show('app');
   $('demoBar').hidden = !DEMO || EMBED;
-  dash = mountDashboard(DEMO || DATA, { units: units(), targets: SET.targets, ephemeral: !!DEMO });
+  $('cmpBar').hidden = !CMP || EMBED;
+  $('shareBtn').hidden = !!CMP;
+  if (CMP) {
+    const t = $('cmpBarTxt'); t.replaceChildren();
+    const b = document.createElement('b'); b.textContent = CMP.demo ? 'Sample people.' : 'Comparing'; t.append(b, ' ' + (CMP.demo ? `${listNames(CMP.people.map(x => x.name))} are made up, so you can look around.` : listNames(CMP.people.map(x => x.name)) + '.'));
+    $('cmpEdit').hidden = !!CMP.demo;
+    dash = mountDashboard(null, { people: cmpPeople(), units: units(), targets: SET.targets, ephemeral: !!CMP.demo });
+  } else dash = mountDashboard(DEMO || DATA, { units: units(), targets: SET.targets, ephemeral: !!DEMO });
 }
 // Sample data: a made-up person, never stored, never mixed with your own data.
-function openDemo() { DEMO = sampleData(); openDashboard(); }
+function openDemo() { DEMO = sampleData(); CMP = null; openDashboard(); }
 function closeDemo() {
   DEMO = null; try { history.replaceState(null, '', location.pathname); } catch (e) {}
   if (DATA) openDashboard(); else { if (dash) { dash.destroy(); dash = null; } show('landing'); }
@@ -79,7 +92,7 @@ function fail(msg) {
 function resetWorker() { if (worker) worker.terminate(); worker = makeWorker(); }
 const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-$('cancel').addEventListener('click', () => { resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
+$('cancel').addEventListener('click', () => { if (cmpCancel) { cmpCancel(); return; } resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
 
 // file input: one input, the "merge" flag decides what happens with the result
 let mergeNext = false;
@@ -94,7 +107,9 @@ addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
 addEventListener('drop', e => {
   if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('drop').classList.remove('over');
   if (current === 'processing') return;
-  const f = e.dataTransfer.files[0]; if (f) readFile(f, { merge: current === 'app' && !!DATA && !DEMO });
+  const fs = [...e.dataTransfer.files];
+  if (fs.length > 1 || $('cmp').open || CMP) { openCmpDialog(fs); return; }
+  const f = fs[0]; if (f) readFile(f, { merge: current === 'app' && !!DATA && !DEMO && !CMP });
 });
 const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
 
@@ -107,10 +122,13 @@ $('menuBtn').addEventListener('click', () => {
   form.sleep.value = t.sleep / 60; form.sleepFloor.value = t.sleepFloor / 60;
   form.steps.value = t.steps; form.exercise.value = t.exercise; form.daylight.value = t.daylight;
   syncUnitSeg();
-  $('setForm').classList.toggle('demo', !!DEMO);
-  if (DEMO) $('dataInfo').textContent = 'You are looking at sample data from a made-up person. Settings you change here are not saved.';
-  const m = (DEMO || DATA).meta, src = Object.keys(m.sources || {}).length;
-  if (!DEMO) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.`;
+  const demo = !!DEMO || !!(CMP && CMP.demo);
+  $('setForm').classList.toggle('demo', demo);
+  $('setForm').classList.toggle('cmp', !!CMP);
+  if (demo) $('dataInfo').textContent = 'You are looking at sample data from made-up people. Settings you change here are not saved.';
+  else if (CMP) $('dataInfo').textContent = `Comparing ${listNames(CMP.people.map(x => x.name))}. Their exports are kept only in this browser until you end the comparison.`;
+  const m = DATA && DATA.meta, src = m ? Object.keys(m.sources || {}).length : 0;
+  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.`;
   disarm();
   dlg.showModal();
 });
@@ -128,7 +146,7 @@ form.addEventListener('submit', async e => {
   const sleep = Math.round(+form.sleep.value * 60), floor = Math.round(+form.sleepFloor.value * 60);
   if (floor > sleep) { form.sleepFloor.setCustomValidity('Must not be above the sleep target'); form.reportValidity(); form.sleepFloor.setCustomValidity(''); return; }
   SET = { units: pendingUnits, targets: { sleep, sleepFloor: floor, steps: +form.steps.value, exercise: +form.exercise.value, daylight: +form.daylight.value } };
-  if (!DEMO) { try { await store.set('settings', SET); } catch (err) {} }
+  if (!DEMO && !(CMP && CMP.demo)) { try { await store.set('settings', SET); } catch (err) {} }
   dlg.close(); openDashboard(); toast('Settings saved.');
 });
 // ---------------------------------------------------------------- poster
@@ -171,16 +189,132 @@ $('forget').addEventListener('click', async () => {
   disarm(); dlg.close();
   await store.forget();
   if (dash) { dash.destroy(); dash = null; }
-  DATA = null; SET = { targets: { ...DEFAULT_TARGETS } };
+  DATA = null; CMP = null; SET = { targets: { ...DEFAULT_TARGETS } };
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
   show('landing'); toast('Deleted from this browser.');
 });
 
+// ---------------------------------------------------------------- compare with friends
+// Two or three exports, each named. Files are read one after another by the same worker as your own.
+const MAXP = 3, cdlg = $('cmp');
+let SLOTS = [], pickAt = 0, cmpCancel = null;
+function validateCompare(c) {
+  if (!c || !Array.isArray(c.people) || c.people.length < 2 || c.people.length > MAXP) throw new Error('compare');
+  return { people: c.people.map(x => { if (!x || typeof x.name !== 'string' || !x.name.trim() || x.name.length > 40) throw new Error('name'); return x.own ? { name: x.name, own: true } : { name: x.name, data: validateData(x.data) }; }) };
+}
+function openCmpDemo() { DEMO = null; CMP = { demo: true, people: samplePeople() }; openDashboard(); }
+function endCompare() {
+  const wasDemo = CMP && CMP.demo; CMP = null;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (!wasDemo) store.del('compare');
+  if (DATA) openDashboard(); else { if (dash) { dash.destroy(); dash = null; } show('landing'); }
+}
+// a name from the file, unless it is the generic "export.zip" every iPhone produces
+const nameFromFile = f => { const n = f.name.replace(/\.(zip|xml|json)$/i, '').replace(/[_-]+/g, ' ').trim(); return !n || /export|health|atlas|^\d/i.test(n) ? '' : n.slice(0, 24); };
+function openCmpDialog(files = [], keep = false) {
+  if (!cdlg.open && !keep) {
+    $('cmpErr').hidden = true;
+    SLOTS = CMP && !CMP.demo ? CMP.people.map(x => ({ name: x.name, own: !!x.own, data: x.own ? null : x.data }))
+      : DATA ? [{ name: 'You', own: true }, { name: '' }] : [{ name: '' }, { name: '' }];
+  }
+  addFiles(files, SLOTS.findIndex(x => !x.own && !x.file && !x.data));
+  renderSlots();
+  if (!cdlg.open) cdlg.showModal();
+}
+function addFiles(files, at) {
+  for (const f of files) {
+    if (at < 0 || at >= SLOTS.length) { if (SLOTS.length >= MAXP) { cmpError(`Up to ${MAXP} people at a time. ${f.name} was left out.`); break; } SLOTS.push({ name: '' }); at = SLOTS.length - 1; }
+    const sl = SLOTS[at]; sl.file = f; sl.own = false; sl.data = null; if (!sl.name) sl.name = nameFromFile(f);
+    at = SLOTS.findIndex((x, k) => k > at && !x.own && !x.file && !x.data);
+  }
+}
+function cmpError(msg) { $('cmpErr').textContent = msg; $('cmpErr').hidden = !msg; }
+function renderSlots() {
+  const ol = $('cslots'); ol.replaceChildren();
+  SLOTS.forEach((sl, k) => {
+    const li = document.createElement('li'); li.className = 'cslot'; li.style.setProperty('--pc', `var(--p-${k + 1})`);
+    const sw = document.createElement('i'); sw.className = 'sw'; sw.setAttribute('aria-hidden', 'true');
+    const nm = document.createElement('input'); nm.type = 'text'; nm.maxLength = 24; nm.placeholder = k === 0 && sl.own ? 'You' : `Person ${k + 1}`; nm.value = sl.name; nm.setAttribute('aria-label', `Name for person ${k + 1}`); nm.autocomplete = 'off';
+    nm.addEventListener('input', () => { sl.name = nm.value; });
+    const fb = document.createElement('button'); fb.type = 'button'; fb.className = 'cfile' + (sl.own || sl.file || sl.data ? ' set' : '');
+    const big = document.createElement('b'), small = document.createElement('small');
+    if (sl.own) { big.textContent = 'Your data in this browser'; small.textContent = DATA ? `${DATA.meta.days.toLocaleString()} days · tap to use a file instead` : ''; }
+    else if (sl.file) { big.textContent = sl.file.name; small.textContent = `${mb(sl.file.size)} · tap to change`; }
+    else if (sl.data) { big.textContent = 'Already read'; small.textContent = `${sl.data.meta.days.toLocaleString()} days · tap to replace`; }
+    else { big.textContent = 'Choose export'; small.textContent = '.zip, .xml or saved .json'; }
+    fb.append(big, small);
+    fb.addEventListener('click', () => { pickAt = k; $('cmpFile').click(); });
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'cx'; x.setAttribute('aria-label', `Remove person ${k + 1}`); x.title = 'Remove';
+    x.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3l10 10M13 3 3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    x.addEventListener('click', () => { if (SLOTS.length > 2) SLOTS.splice(k, 1); else SLOTS[k] = { name: '' }; renderSlots(); });
+    li.append(sw, nm, fb, x); ol.appendChild(li);
+  });
+  $('cmpAdd').hidden = SLOTS.length >= MAXP;
+}
+$('cmpTry').addEventListener('click', () => openCmpDialog());
+$('cmpFromSettings').addEventListener('click', () => { dlg.close(); openCmpDialog(); });
+$('cmpEdit').addEventListener('click', () => openCmpDialog());
+$('cmpEnd').addEventListener('click', endCompare);
+$('cmpClose').addEventListener('click', () => cdlg.close());
+cdlg.addEventListener('click', e => { if (e.target === cdlg) cdlg.close(); });
+$('cmpAdd').addEventListener('click', () => { if (SLOTS.length < MAXP) { SLOTS.push({ name: '' }); renderSlots(); } });
+$('cmpDemo').addEventListener('click', () => { cdlg.close(); try { history.replaceState(null, '', '?demo=compare'); } catch (e) {} openCmpDemo(); });
+$('cmpFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; cmpError(''); addFiles(fs, pickAt); renderSlots(); });
+$('cmpForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const ready = SLOTS.filter(x => x.own || x.file || x.data);
+  if (ready.length < 2) return cmpError('Choose at least two exports to compare.');
+  ready.forEach(x => { x.name = (x.name || '').trim() || (x.own ? 'You' : `Person ${SLOTS.indexOf(x) + 1}`); });
+  const lower = ready.map(x => x.name.toLowerCase());
+  if (new Set(lower).size < lower.length) return cmpError('Give each person a different name, so the charts can tell them apart.');
+  cdlg.close();
+  runCompare(ready);
+});
+// read the new files one by one, then check nobody was added twice
+function parseOne(file, label, k, n) {
+  return new Promise((res, rej) => {
+    $('procFile').textContent = `${file.name} · ${mb(file.size)}`;
+    $('procTitle').textContent = `Reading ${label}’s export` + (n > 1 ? ` (${k} of ${n})` : '');
+    setProgress(0, 'Opening the file…'); show('processing');
+    cmpCancel = () => rej(new Error('cancelled'));
+    worker.onmessage = ({ data: m }) => {
+      if (m.type === 'progress') setProgress(m.f, m.stage === 'assembling' ? 'Putting the days together…' : `${Math.floor(m.f * 100)}% read`);
+      else if (m.type === 'done') res(m.data); else if (m.type === 'error') rej(new Error(m.message));
+    };
+    worker.onerror = ev => { ev.preventDefault(); rej(new Error('Something went wrong while reading this file.')); };
+    worker.postMessage({ file, prev: null });
+  });
+}
+const fingerprint = d => { const st = (d.daily.steps || []).reduce((t, v) => t + (v || 0), 0); return `${d.meta.start}|${d.meta.end}|${d.meta.days}|${Math.round(st)}|${d.workouts.length}`; };
+async function runCompare(slots) {
+  const back = current === 'processing' ? prevView : current || 'landing', todo = slots.filter(x => x.file);
+  let k = 0;
+  try {
+    for (const sl of todo) { k++; sl.data = await parseOne(sl.file, sl.name, k, todo.length); sl.file = null; }
+  } catch (err) {
+    cmpCancel = null; resetWorker();
+    if (back === 'app' && dash) show('app'); else if (back === 'app') openDashboard(); else show('landing');
+    if (err.message === 'cancelled') return;
+    openCmpDialog([], true); cmpError(`${slots.find(x => x.file) ? slots.find(x => x.file).name : 'One export'}: ${err.message}`); return;
+  }
+  cmpCancel = null;
+  const prints = slots.map(x => fingerprint(x.own ? DATA : x.data));
+  for (let a = 0; a < prints.length; a++) for (let b = a + 1; b < prints.length; b++) if (prints[a] === prints[b]) {
+    if (back === 'app' && dash) show('app'); else show('landing');
+    openCmpDialog([], true); cmpError(`${slots[a].name} and ${slots[b].name} look like the same export. Choose a different file for one of them.`); return;
+  }
+  CMP = { people: slots.map(x => x.own ? { name: x.name, own: true } : { name: x.name, data: x.data }) };
+  DEMO = null; try { if (location.search) history.replaceState(null, '', location.pathname); } catch (e) {}
+  try { await store.set('compare', CMP); store.persist(); } catch (e) { toast('Could not save in this browser; the comparison will be gone when you close the tab.', 6000); }
+  openDashboard(); toast(`Comparing ${listNames(CMP.people.map(x => x.name))}.`);
+}
+
 // ---------------------------------------------------------------- boot
 (async () => {
-  const [d, s] = EMBED ? [null, null] : await Promise.all([store.get('data'), store.get('settings')]);
+  const [d, s, c] = EMBED ? [null, null, null] : await Promise.all([store.get('data'), store.get('settings'), store.get('compare')]);
   if (s && s.targets) SET = { units: s.units, targets: { ...DEFAULT_TARGETS, ...s.targets } };
   if (d) { try { DATA = validateData(d); } catch (e) { DATA = null; } }
-  if (EMBED || Q.has('demo')) openDemo();
-  else if (DATA) openDashboard(); else show('landing');
+  if (c) { try { CMP = validateCompare(c); } catch (e) { CMP = null; } }
+  if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo();
+  else if (DATA || (CMP && cmpPeople().length > 1)) openDashboard(); else show('landing');
 })();

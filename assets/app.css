@@ -58,8 +58,8 @@ a{color:inherit}
 footer.about .fine{margin-top:10px;color:var(--ink-3)}
 
 /* settings sheet */
-dialog#settings{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(520px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain}
-dialog#settings::backdrop{background:rgba(10,11,14,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+dialog#settings,dialog#cmp{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(520px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain}
+dialog#settings::backdrop,dialog#cmp::backdrop{background:rgba(10,11,14,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 .sheet{background:var(--card);border-radius:24px;padding:22px 24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 .sh-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sh-head h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.03em}
@@ -118,4 +118,30 @@ html.embed .shell{padding-bottom:40px}
   #shareBtn,#menuBtn{order:4}
   .bar-in .years{order:5;min-width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
   .bar-in .years::-webkit-scrollbar{display:none}
+}
+
+/* compare with friends */
+#setForm.cmp #addExport,#setForm.cmp #saveJson,#setForm.cmp .acts + .small{display:none}
+.cslots{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.cslot{--pc:var(--ink);display:grid;grid-template-columns:12px minmax(0,1fr) minmax(0,1.25fr) 30px;gap:10px;align-items:center;padding:10px 10px 10px 14px;border-radius:16px;background:var(--card-2);box-shadow:inset 3px 0 0 var(--pc)}
+.cslot .sw{width:12px;height:12px;border-radius:50%;background:var(--pc)}
+.cslot input{font:600 15px var(--sans);color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:8px 10px;width:100%;min-width:0}
+.cslot input:focus{outline:2px solid var(--focus);outline-offset:1px}
+.cfile{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;padding:7px 12px;border-radius:10px;box-shadow:inset 0 0 0 1.5px var(--hair);border:0;min-width:0;background:var(--card)}
+.cfile:not(.set){box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--pc) 55%,transparent)}
+.cfile:hover{background:var(--seg)}
+.cfile b{font-size:13.5px;font-weight:650;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfile small{font-size:11.5px;color:var(--ink-3);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cx{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--ink-2)}
+.cx:hover{background:var(--seg);color:var(--ink)}
+#cmpAdd{margin-top:12px}
+#cmp .err{margin-top:12px}
+#cmp .sh-foot{align-items:center}
+#cmp .cdemo{margin:0 auto 0 0}
+.cmpnote button + button{margin-left:-4px}
+@media (max-width:600px){
+  .cslot{grid-template-columns:12px minmax(0,1fr) 30px;grid-template-areas:'s n x' 'f f f';padding:10px}
+  .cslot .sw{grid-area:s}.cslot input{grid-area:n}.cslot .cx{grid-area:x}.cslot .cfile{grid-area:f}
+  #cmp .sh-foot{flex-direction:column-reverse;align-items:stretch}
+  #cmp .cdemo{margin:4px auto 0}
 }

@@ -21,6 +21,7 @@ async function tx(mode, fn) {
 }
 export const get = k => tx('readonly', s => s.get(k)).catch(() => undefined);
 export const set = (k, v) => tx('readwrite', s => s.put(v, k));
+export const del = k => tx('readwrite', s => s.delete(k)).catch(() => {});
 export async function forget() {
   await tx('readwrite', s => s.clear()).catch(() => {});
   try { localStorage.removeItem('ha-state'); localStorage.removeItem('ha-stage'); } catch (e) {}
