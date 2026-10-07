@@ -71,6 +71,18 @@ Missing data:
 
 The same export added twice is refused, names must differ, and friends' exports stay in this browser until **End comparison** or **Forget my data**.
 
+## Dashboard 1.1
+
+Small changes that make the charts easier to read, with the design system unchanged:
+
+- Duration axes step in clock-friendly units (15 min, 30 min, 1 hr, 2 hr) and read "1h20", never "80m" above "1h".
+- Faint weekly and monthly bars keep the chapter colour; the trend line turns red below target. Pale red next to pale orange was hard to tell apart and made charts look striped. Solid single-day bars in Week view still turn red.
+- Large axis values read 15k, 10k, 5k, like the strip under the chart.
+- The sleep schedule axis hugs the data to the hour instead of starting hours early.
+- Days still to come in the rings calendar show only their date, not empty rings.
+- "Needs attention" says its shortfall adds up only the days under target, so it no longer seems to contradict an average above target.
+- Rails say what the arrows compare against, and the Workouts header no longer mentions a trend line it does not draw.
+
 ## Run locally
 
 ```sh

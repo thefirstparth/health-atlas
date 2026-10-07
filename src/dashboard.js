@@ -147,12 +147,13 @@ const U = {
   ft2: { f: v => [nf(v, 2), 'ft'], c: v => nf(v, 2), t: v => nf(v, 1), d: 'abs', dp: 2, du: 'ft' },
   ftps: { f: v => [nf(v, 2), 'ft/s'], c: v => nf(v, 2), t: v => nf(v, 1), d: 'abs', dp: 2, du: 'ft/s' },
   lb: { f: v => [nf(v, 1), 'lb'], c: v => nf(v, 1), t: v => nf(v), d: 'abs', dp: 1, du: 'lb' },
-  dur: { f: v => [fmtDur(v), ''], c: fmtDurC, t: v => nf(v / 60, 1) + 'h', d: 'dur', ax: v => v % 60 === 0 ? (v / 60) + 'h' : nf(v) + 'm' },
+  dur: { f: v => [fmtDur(v), ''], c: fmtDurC, t: v => nf(v / 60, 1) + 'h', d: 'dur', ax: v => v === 0 ? '0' : v < 60 ? nf(v) + 'm' : v % 60 === 0 ? (v / 60) + 'h' : fmtDurC(v) },
   clock: { f: v => [fmtClock(v), ''], c: fmtClockC, d: 'clock', ax: fmtClockAxis },
 };
 const F1 = (u, v) => U[u].f(v);
 const fmt = (u, v) => { const [a, b] = F1(u, v); return b ? `${a} ${b}` : a; };
-const axisFmt = u => U[u].ax || (v => nf(v, Math.abs(v - Math.round(v)) > 1e-6 ? (Math.abs(v * 10 - Math.round(v * 10)) > 1e-6 ? 2 : 1) : 0));
+const axisFmt = u => U[u].ax || Object.assign(v => nf(v, Math.abs(v - Math.round(v)) > 1e-6 ? (Math.abs(v * 10 - Math.round(v * 10)) > 1e-6 ? 2 : 1) : 0), { plain: true });
+const kFmt = v => v === 0 ? '0' : nf(v / 1000, Math.abs(v % 1000) > 1e-6 ? 1 : 0) + 'k';
 
 // ---------------- metric registry  (dir: +1 higher better, -1 lower better, 0 no single better direction)
 const DEF = {
@@ -367,11 +368,13 @@ function clockDom(vals) {
   for (let v = a; v <= b; v += st) t.push(v);
   return { a, b, t };
 }
+// durations (minutes): steps that read as clock time (15 min, 30 min, 1 hr ...), never "80m" above "1h"
 function durDom(vals) {
   vals = vals.filter(v => v != null);
-  const hi = Math.max(...vals, 1);
-  if (hi > 150) { const d = yDom([0, hi / 60], true, 3); return { a: 0, b: d.b * 60, t: d.t.map(v => v * 60) }; }
-  return yDom([0, hi], true, 3);
+  const hi = Math.max(...vals, 1) * 1.04;
+  const st = [5, 10, 15, 20, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1200, 1800, 2400, 3600].find(x => hi / x <= 4) || 6000;
+  const b = Math.ceil(hi / st) * st, t = []; for (let v = 0; v <= b; v += st) t.push(v);
+  return { a: 0, b, t };
 }
 function xTicks(view, p, narrow) {
   const t = [];
@@ -391,9 +394,10 @@ function frame(box, view, p, dom, opts = {}) {
   const pxDay = pw / (p.b - p.a + 1), inv = !!opts.invert;
   const y = v => mt + (inv ? (v - dom.a) / (dom.b - dom.a) : 1 - (v - dom.a) / (dom.b - dom.a)) * ph;
   const ax = sv('g', { class: 'ax' }, svg);
+  const yf = (!opts.yFmt || opts.yFmt.plain) && dom.t.some(v => Math.abs(v) >= 10000) ? kFmt : (opts.yFmt || (v => nf(v)));
   for (const tv of dom.t) {
     sv('line', { class: 'gl', x1: 0, x2: pw, y1: y(tv), y2: y(tv) }, ax);
-    const tx = sv('text', { x: pw + 10, y: y(tv) + 4 }, ax); tx.textContent = (opts.yFmt || (v => nf(v)))(tv);
+    const tx = sv('text', { x: pw + 10, y: y(tv) + 4 }, ax); tx.textContent = yf(tv);
   }
   const base = mt + ph, narrow = pw < 520;
   const xt = xTicks(view, p, narrow), font = `500 11px ${SANS}`;
@@ -618,7 +622,7 @@ function drawTrend(box, def, view, p, color) {
   if (isBar) {
     ctx.forEach(c => {
       const cx = F.x((c.s + c.e) / 2), bw = Math.max(2, Math.min(22, F.pxDay * (c.e - c.s + 1) * .62));
-      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && c.v < tgt ? bad : color, 'fill-opacity': faint, class: 'grow' }, F.g);
+      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && !r && c.v < tgt ? bad : color, 'fill-opacity': faint, class: 'grow' }, F.g);
       targets.push({ x: cx, c, ty: c.v != null ? F.y(c.v) : F.base });
     });
   } else {
@@ -653,7 +657,7 @@ function trendLegend(info, color, def, view) {
   else items.push({ t: info.ctx === 'day' ? 'Each day' : info.ctx === 'week' ? 'Weekly total' : 'Monthly total', c: color });
   if (info.base30) items.push({ t: 'Average of the last 30 days', cls: 'hl' });
   if (info.goal) items.push({ t: 'Ring goal', cls: 'hl' });
-  if (info.target) items.push({ t: 'Target', cls: 'hl' }, { t: 'Below target', c: css('--bad') });
+  if (info.target) items.push({ t: 'Target', cls: 'hl' }, { t: info.r ? 'Trend below target' : 'Below target', c: css('--bad'), cls: info.r ? 'ln' : '' });
   return legend(items);
 }
 
@@ -725,7 +729,7 @@ function metricBand(defIn, view, p, chColor) {
     list.push({ l: clk ? 'Latest' : def.night ? 'Highest night' : 'Highest day', v: F1(def.u, x.hi), x: dateShort(x.hiI, view) });
   }
   rows(B.rail, list);
-  if (!isCount) B.rail.appendChild(el('div', 'meta', `Recorded on ${cur.n} of ${daysIn(p)} ${def.night ? 'nights' : 'days'}`));
+  B.rail.appendChild(el('div', 'meta', (isCount ? '' : `Recorded on ${cur.n} of ${daysIn(p)} ${def.night ? 'nights' : 'days'}. `) + `Arrows compare with the same number of ${def.night ? 'nights' : 'days'} just before.`));
   const b = chartBox(), lg = el('div'); B.main.append(b, lg);
   mount(b, bx => { const info = drawTrend(bx, def, view, p, color); lg.replaceChildren(trendLegend(info, color, def, view)); });
   return B.c;
@@ -853,13 +857,13 @@ function sleepChapter(root, view, p, chColor) {
     const x = extremes('sl_asleep', p.a, e);
     let under = 0, hitN = 0; for (let i = Math.max(p.a, 0); i <= e; i++) { const v = get('sl_asleep', i); if (v == null) continue; if (v < FLOOR) under++; if (v >= TGT) hitN++; }
     rows(B.rail, [...windowRows(def, e, false), { l: `Nights at ${hTxt(TGT)} or more`, v: `${hitN} of ${asl.n}`, x: '' }, { l: `Nights under ${hTxt(FLOOR)}`, v: String(under), x: under ? el('span', 'chip bad', 'below floor') : '' }, { l: 'Shortest night', v: fmtDur(x.lo), x: dateShort(x.loI, view) }]);
-    B.rail.appendChild(el('div', 'meta', `Recorded on ${asl.n} of ${daysIn(p)} nights`));
+    B.rail.appendChild(el('div', 'meta', `Recorded on ${asl.n} of ${daysIn(p)} nights. Arrows compare with the same number of nights just before.`));
     const stacked = cfg.ctx === 'day', b = chartBox(); B.main.appendChild(b);
     const items = [];
     if (cfg.r) items.push({ t: `Trend, ${cfg.tn}`, c: stacked ? ink : color, cls: 'ln' });
     if (stacked) STAGES.forEach(([k, n]) => { if (win('sl_' + k, p.a, e).sum > 0) items.push({ t: n, c: colors[k] }); });
     else items.push({ t: CTXNAME[cfg.ctx], c: color, op: .35 });
-    items.push({ t: 'Below target', c: bad, cls: 'ln' }, { t: `Target ${hTxt(TGT)}`, cls: 'hl' }, { t: `Under ${hTxt(FLOOR)}`, c: bad, op: .25 });
+    items.push(cfg.r ? { t: 'Trend below target', c: bad, cls: 'ln' } : {}, { t: `Target ${hTxt(TGT)}`, cls: 'hl' }, { t: `Under ${hTxt(FLOOR)}`, c: bad, op: .25 });
     B.main.appendChild(legend(items));
     mount(b, bx => {
       const ctx = buckets(cfg.ctx, p.a, p.b).map(bk => { const w = win('sl_asleep', bk.s, bk.e), o = { ...bk, n: w.n, tot: w.v }; STAGES.forEach(([k]) => o[k] = win('sl_' + k, bk.s, bk.e).v || 0); return o; });
@@ -872,7 +876,7 @@ function sleepChapter(root, view, p, chColor) {
           if (stacked) {
             let acc = 0; const parts = STAGES.filter(([k]) => s[k] > 0);
             parts.forEach(([k], j) => { const y0 = F.y(acc), y1 = F.y(acc + s[k]); acc += s[k]; const gap = j > 0 ? 1 : 0; if (j === parts.length - 1) sv('path', { d: barPath(cx, y0 - gap, y1, bw), fill: colors[k], 'fill-opacity': r ? .7 : 1, class: 'grow' }, F.g); else sv('rect', { x: cx - bw / 2, y: y1, width: bw, height: Math.max(0, y0 - y1 - gap), fill: colors[k], 'fill-opacity': r ? .7 : 1, class: 'grow' }, F.g); });
-          } else sv('path', { d: barPath(cx, F.base, F.y(s.tot), bw), fill: s.tot < TGT ? bad : color, 'fill-opacity': .2, class: 'grow' }, F.g);
+          } else sv('path', { d: barPath(cx, F.base, F.y(s.tot), bw), fill: color, 'fill-opacity': .2, class: 'grow' }, F.g);
         }
         targets.push({ x: cx, s, ty: s.n ? F.y(s.tot) : null });
       });
@@ -901,7 +905,7 @@ function sleepChapter(root, view, p, chColor) {
     if (q) list.push({ l: 'Middle half', v: `${fmtClockC(q[0])}–${fmtClockC(q[1])}`, x: '' });
     list.push(...windowRows(def, e, false));
     rows(B.rail, list);
-    B.rail.appendChild(el('div', 'meta', `Recorded on ${mid.n} of ${daysIn(p)} nights`));
+    B.rail.appendChild(el('div', 'meta', `Recorded on ${mid.n} of ${daysIn(p)} nights. Arrows compare with the same number of nights just before.`));
     const b = chartBox(); B.main.appendChild(b);
     B.main.appendChild(legend(cfg.r ? [{ t: `Midpoint, trend ${cfg.tn}`, c: color, cls: 'ln' }, { t: 'Bedtime to wake time, trend', c: color, op: .25 }, { t: cfg.ctx === 'day' ? 'Each night' : '', c: color, op: .4 }] : [{ t: 'Asleep, first to last minute', c: color, op: .45 }, { t: 'Midpoint', c: color, cls: 'ln' }]));
     mount(b, bx => {
@@ -910,9 +914,9 @@ function sleepChapter(root, view, p, chColor) {
       if (r) for (let i = Math.max(p.a, 0); i <= e; i++) idx.push(i);
       const vals = cfg.ctx === 'day' ? ctx.flatMap(s => [s.bed.v, s.wake.v]) : idx.flatMap(i => [TB[i], TW[i]]);
       const nn = vals.filter(v => v != null); if (!nn.length) return;
-      const lo = Math.min(...nn), hi = Math.max(...nn), stepH = (hi - lo) > 900 ? 360 : (hi - lo) > 420 ? 240 : 120;
-      const a0 = Math.floor(lo / stepH) * stepH, b0 = Math.ceil(hi / stepH) * stepH, t = [];
-      for (let v = a0; v <= b0; v += stepH) t.push(v);
+      const lo = Math.min(...nn), hi = Math.max(...nn), a0 = Math.floor((lo - 15) / 60) * 60, b0 = Math.ceil((hi + 15) / 60) * 60;
+      const stepH = [60, 120, 180, 240, 360].find(x => (b0 - a0) / x <= 4) || 480, t = [];
+      for (let v = Math.ceil(a0 / stepH) * stepH; v <= b0; v += stepH) t.push(v);
       const F = frame(bx, view, p, { a: a0, b: b0, t }, { yFmt: fmtClockAxis, invert: true, strip: true, label: 'Sleep schedule' });
       const targets = [];
       if (cfg.ctx === 'day') ctx.forEach(s => {
@@ -1013,6 +1017,7 @@ function ringsCard(view, p) {
     const mv = get('active', i), mg = get('moveGoal', i), ex = get('exercise', i), eg = get('exerciseGoal', i), st = get('stand', i), sg = get('standGoal', i);
     const f = [mv != null && mg ? mv / mg : null, ex != null && eg ? ex / eg : null, st != null && sg ? st / sg : null];
     if (mv != null) { days++; f.forEach((x, k) => { if (x != null && x >= 1) closed[k]++; }); }
+    if (i > LAST) { cell.classList.add('later'); const r = el('div', 'ring0'); cell.append(r, el('span', null, String(dt(i).getUTCDate()))); wrap.appendChild(cell); continue; }
     cell.appendChild(ringSvg(f, 40)); cell.appendChild(el('span', null, String(dt(i).getUTCDate())));
     const show = () => { const r = cell.getBoundingClientRect(); if (mv == null) return showTip(r.left + r.width / 2, r.top, dLong(i), [{ v: i > LAST ? 'Not yet' : 'No data' }]); showTip(r.left + r.width / 2, r.top, dLong(i), [{ v: `${nf(mv)} / ${nf(mg)} kcal`, l: 'Move', c: css('--ring-move') }, { v: `${nf(ex)} / ${nf(eg)} min`, l: 'Exercise', c: css('--ring-ex') }, { v: `${nf(st)} / ${nf(sg)} hr`, l: 'Stand', c: css('--ring-stand') }]); };
     cell.addEventListener('pointerenter', show); cell.addEventListener('focus', show); cell.addEventListener('pointerleave', hideTip); cell.addEventListener('blur', hideTip);
@@ -1303,11 +1308,13 @@ const MEDC = {};
 function leverMedCache(L, i) { const k = Math.floor(i / 7); if (!(k in MEDC)) { const q = quantiles('sl_mid', k * 7 - 89, k * 7, [.5]); MEDC[k] = q ? q[0] : null; } return MEDC[k]; }
 
 const ARROW_ACT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// the shortfall adds up only the days under target, so it can be large even when the average clears it
 function debtText(L, st, e) {
-  if (L.id === 'sleep') return { v: fmtDur(st.short), u: 'short', sub: `of sleep across the last 14 nights, against ${hTxt(L.target)} a night` };
-  if (L.id === 'steps') { const d = win('distance', e - 13, e).sum, k = win('steps', e - 13, e).sum; const km = k ? st.short * d / k : null; return { v: nf(Math.round(st.short / 100) * 100), u: 'steps short', sub: `in the last 14 days, against ${nf(L.target)} a day${km ? ` · about ${nf(km, 1)} ${DU} not walked` : ''}` }; }
-  if (L.id === 'exercise') return { v: fmtDur(st.short), u: 'short', sub: `of exercise in the last 14 days, against ${L.target} minutes a day` };
-  if (L.id === 'daylight') return { v: fmtDur(st.short), u: 'short', sub: `of daylight in the last 14 days, against ${L.target} minutes a day` };
+  const miss = st.n - st.h, on = `added up over the ${miss} ${miss === 1 ? WORD(L).slice(0, -1) : WORD(L)} under`;
+  if (L.id === 'sleep') return { v: fmtDur(st.short), u: 'short', sub: `of sleep, ${on} ${hTxt(L.target)} in the last 14` };
+  if (L.id === 'steps') { const d = win('distance', e - 13, e).sum, k = win('steps', e - 13, e).sum; const km = k ? st.short * d / k : null; return { v: nf(Math.round(st.short / 100) * 100), u: 'steps short', sub: `${on} ${nf(L.target)} in the last 14${km ? ` · about ${nf(km, 1)} ${DU} not walked` : ''}` }; }
+  if (L.id === 'exercise') return { v: fmtDur(st.short), u: 'short', sub: `of exercise, ${on} ${L.target} minutes in the last 14` };
+  if (L.id === 'daylight') return { v: fmtDur(st.short), u: 'short', sub: `of daylight, ${on} ${L.target} minutes in the last 14` };
   return { v: String(st.n - st.h), u: `of ${st.n} nights`, sub: `slept more than an hour off your usual rhythm (middle of sleep near ${fmtClock(st.med)})` };
 }
 function actionText(L, st, e) {
@@ -1976,7 +1983,7 @@ function render() {
   } else {
     head.appendChild(el('p', null, ch.desc));
     const cfg = VC[view];
-    ctx.append(el('b', null, periodLabel(view, p)), el('span', null, cfg.r ? `Trend line: weighted average of ${cfg.tn} around each day` : 'Each day shown, with your 30-day average for reference'));
+    ctx.append(el('b', null, periodLabel(view, p)), el('span', null, ch.id === 'workouts' ? `Bars: workout time each ${cfg.ctx}, stacked by sport` : cfg.r ? `Trend line: weighted average of ${cfg.tn} around each day` : 'Each day shown, with your 30-day average for reference'));
   }
   head.appendChild(ctx);
   if (CMP) CMP.head(head);
