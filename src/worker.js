@@ -1,6 +1,6 @@
 // Runs the parser off the main thread. Messages in: {file, prev?}. Out: progress | done | error.
 import { parseExport, mergeData } from './parser.js';
-import { validateData } from './validate.js';
+import { validateData, trimTimeline } from './validate.js';
 
 self.onmessage = async ({ data: msg }) => {
   const { file, prev } = msg;
@@ -16,7 +16,8 @@ self.onmessage = async ({ data: msg }) => {
     }
     // Keep only what the charts use: date of birth and sex are read by the parser but never stored.
     delete data.meta.dob; delete data.meta.sex;
-    const merged = prev ? mergeData(validateData(prev), data) : data;
+    data = trimTimeline(data);
+    const merged = prev ? trimTimeline(mergeData(validateData(prev), data)) : data;
     self.postMessage({ type: 'done', data: merged, fresh: { start: data.meta.start, end: data.meta.end } });
   } catch (e) {
     self.postMessage({ type: 'error', message: friendly(e) });

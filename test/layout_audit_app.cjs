@@ -16,7 +16,8 @@ const AUDIT = () => {
     if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible' && !e.closest('.tbl-wrap')) issues.push(`clipped: "${e.textContent.trim().slice(0,40)}" (${e.className}) ${e.scrollWidth}>${e.clientWidth}`);
     // escapes its card
     const card = e.closest('.card, .ch-head, .bar-in');
-    if (card && !e.closest('.tbl-wrap')) { const c = card.getBoundingClientRect(); if (r.right > c.right + 1 || r.left < c.left - 1) issues.push(`escapes container: "${e.textContent.trim().slice(0,40)}" (${e.className})`); }
+    // scrolling containers (tables, the year row) legitimately hold items outside their visible box
+    if (card && !e.closest('.tbl-wrap, .years')) { const c = card.getBoundingClientRect(); if (r.right > c.right + 1 || r.left < c.left - 1) issues.push(`escapes container: "${e.textContent.trim().slice(0,40)}" (${e.className})`); }
   });
   // 2. chips must hug their content
   document.querySelectorAll('.chip').forEach(c => { const r = c.getBoundingClientRect(); let w = 0; c.childNodes.forEach(n => { const rg = document.createRange(); rg.selectNodeContents(n); w += rg.getBoundingClientRect().width; }); if (r.width > w + 30) issues.push(`chip stretched: "${c.textContent}" ${Math.round(r.width)} vs ${Math.round(w)}`); });

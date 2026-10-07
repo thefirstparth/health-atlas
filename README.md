@@ -33,6 +33,7 @@ These are the same as the reference parser in `test/reference/parse_health.py`:
 - Rings come from Apple's daily Activity summaries.
 - Sleep uses Apple Watch stages, with other sleep apps used only when there is no Watch sleep at all. A night is dated by the day you woke up.
 - Times are the local clock time written on each record.
+- Impossible dates are left out, and Settings says so: anything after the export date or before 2000, and a small cluster of days (under 60, and under 5% of all days) cut off from the rest by a gap of a year or more. A single record with a wrong clock would otherwise stretch the timeline back decades. This runs after the parser, so parity with the reference is unaffected, and also on data already saved in the browser.
 
 ### Overview rules
 
@@ -107,6 +108,7 @@ node test/homepage_qa.cjs /tmp/hpqa                     # home page: automated c
 node test/dashboard_qa.cjs /tmp/d.json /tmp/dqa         # dashboard's newer pieces: screenshots for a visual pass
 node test/demo_flow.cjs                                 # sample data is never stored and never replaces real data
 node test/compare_flow.cjs test/fixtures                # compare: naming, reading, reload, rename, bad and duplicate files, end
+node test/trim_timeline.mjs                             # impossible dates (1939, after the export, stray clusters) are left out
 COMPARE=1 node test/layout_audit_app.cjs /tmp/d.json    # the layout audit, walking compare mode (sample people)
 ```
 

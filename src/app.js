@@ -1,7 +1,7 @@
 // App shell: landing -> processing -> dashboard, settings, storage. No network calls anywhere.
 import { mountDashboard, DEFAULT_TARGETS } from './dashboard.js';
 import * as store from './store.js';
-import { validateData } from './validate.js';
+import { validateData, trimTimeline } from './validate.js';
 import { sampleData, samplePeople } from './sample.js';
 
 const $ = id => document.getElementById(id);
@@ -90,6 +90,9 @@ function fail(msg) {
   show('landing'); $('err').textContent = msg; $('err').hidden = false;
 }
 function resetWorker() { if (worker) worker.terminate(); worker = makeWorker(); }
+// says what trimTimeline left out, with the dates that gave it away
+const trimNote = m => { const t = m.trimmed; if (!t) return ''; const n = t.days + t.readings, outer = [t.from < m.start ? fmtDay(t.from) : null, t.to > m.end ? fmtDay(t.to) : null].filter(Boolean);
+  return ` Left out ${n.toLocaleString()} ${n === 1 ? 'entry' : 'entries'} dated far outside the rest of your data${outer.length ? ` (${outer.join(' and ')})` : ''}, most likely from a wrong clock.`; };
 const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 $('cancel').addEventListener('click', () => { if (cmpCancel) { cmpCancel(); return; } resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
@@ -128,7 +131,7 @@ $('menuBtn').addEventListener('click', () => {
   if (demo) $('dataInfo').textContent = 'You are looking at sample data from made-up people. Settings you change here are not saved.';
   else if (CMP) $('dataInfo').textContent = `Comparing ${listNames(CMP.people.map(x => x.name))}. Their exports are kept only in this browser until you end the comparison.`;
   const m = DATA && DATA.meta, src = m ? Object.keys(m.sources || {}).length : 0;
-  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.`;
+  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.${trimNote(m)}`;
   disarm();
   dlg.showModal();
 });
@@ -200,7 +203,7 @@ const MAXP = 3, cdlg = $('cmp');
 let SLOTS = [], pickAt = 0, cmpCancel = null;
 function validateCompare(c) {
   if (!c || !Array.isArray(c.people) || c.people.length < 2 || c.people.length > MAXP) throw new Error('compare');
-  return { people: c.people.map(x => { if (!x || typeof x.name !== 'string' || !x.name.trim() || x.name.length > 40) throw new Error('name'); return x.own ? { name: x.name, own: true } : { name: x.name, data: validateData(x.data) }; }) };
+  return { people: c.people.map(x => { if (!x || typeof x.name !== 'string' || !x.name.trim() || x.name.length > 40) throw new Error('name'); return x.own ? { name: x.name, own: true } : { name: x.name, data: trimTimeline(validateData(x.data)) }; }) };
 }
 function openCmpDemo() { DEMO = null; CMP = { demo: true, people: samplePeople() }; openDashboard(); }
 function endCompare() {
@@ -313,7 +316,8 @@ async function runCompare(slots) {
 (async () => {
   const [d, s, c] = EMBED ? [null, null, null] : await Promise.all([store.get('data'), store.get('settings'), store.get('compare')]);
   if (s && s.targets) SET = { units: s.units, targets: { ...DEFAULT_TARGETS, ...s.targets } };
-  if (d) { try { DATA = validateData(d); } catch (e) { DATA = null; } }
+  // data saved before trimTimeline existed is trimmed on load (and saved again, so it happens once)
+  if (d) { try { DATA = trimTimeline(validateData(d)); if (DATA !== d) store.set('data', DATA).catch(() => {}); } catch (e) { DATA = null; } }
   if (c) { try { CMP = validateCompare(c); } catch (e) { CMP = null; } }
   if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo();
   else if (DATA || (CMP && cmpPeople().length > 1)) openDashboard(); else show('landing');
