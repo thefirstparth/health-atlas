@@ -55,6 +55,7 @@
         <p class="hint">Also opens <b>export.xml</b> or a saved <b>.json</b> copy.</p>
       </div>
       <div class="lp-try rv"><button type="button" class="lp-trybtn" id="demoTry">No export handy? <b>See it with sample data</b> <span aria-hidden="true">→</span></button>
+        <button type="button" class="lp-trybtn" id="cmpTry">Comparing with friends? <b>Open two or three exports</b> <span aria-hidden="true">→</span></button>
       </div>
       <p class="err" id="err" role="alert" hidden></p>
 
@@ -235,6 +236,7 @@
 </header>
 
 <div class="demobar" id="demoBar" hidden><span><b>Sample data.</b> A made-up person, so you can look around.</span><button type="button" id="demoExit">Open your own export</button></div>
+<div class="demobar cmpnote" id="cmpBar" hidden><span id="cmpBarTxt"></span><button type="button" id="cmpEdit">Edit people</button><button type="button" id="cmpEnd">End comparison</button></div>
 <div class="shell">
   <nav class="chapters" id="nav" aria-label="Chapters"></nav>
   <main id="main"></main>
@@ -290,6 +292,7 @@
       <h3>Your data</h3>
       <p class="small" id="dataInfo"></p>
       <div class="acts">
+        <button type="button" class="ghost" id="cmpFromSettings">Compare with friends</button>
         <button type="button" class="ghost" id="addExport">Add a newer export</button>
         <button type="button" class="ghost" id="saveJson">Save a copy (.json)</button>
         <button type="button" class="danger" id="forget">Forget my data</button>
@@ -300,6 +303,23 @@
     <div class="sh-foot">
       <button type="button" class="ghost" value="cancel" id="setCancel">Cancel</button>
       <button type="submit" class="primary" value="save" id="setSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== Compare ===================== -->
+<dialog id="cmp" aria-labelledby="cmpTitle">
+  <form method="dialog" class="sheet" id="cmpForm" novalidate>
+    <div class="sh-head"><h2 id="cmpTitle">Compare with friends</h2><button class="xclose" type="button" id="cmpClose" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 3l10 10M13 3 3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+    <p class="small">Add two or three Apple Health exports and give each one a name. They are read on this device, like your own; nothing is uploaded. Each person keeps the colour shown here on every chart.</p>
+    <ol class="cslots" id="cslots"></ol>
+    <button type="button" class="linkbtn" id="cmpAdd">Add a third person</button>
+    <input type="file" id="cmpFile" accept=".zip,.xml,.json,application/zip,text/xml,application/json" multiple hidden>
+    <p class="err" id="cmpErr" role="alert" hidden></p>
+    <p class="small">Friends' exports are kept only in this browser, until you end the comparison or choose Forget my data. A saved <b>.json</b> copy opens much faster than a full export.</p>
+    <div class="sh-foot">
+      <button type="button" class="linkbtn cdemo" id="cmpDemo">Try it with sample people</button>
+      <button type="submit" class="primary" id="cmpGo">Compare</button>
     </div>
   </form>
 </dialog>

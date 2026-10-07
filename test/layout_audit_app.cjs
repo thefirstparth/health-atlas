@@ -1,6 +1,7 @@
 // Layout audit for the web app: node test/layout_audit_app.cjs <dataset.json> [metric|imperial]
 // Needs tools/serve.mjs on :8123. Seeds IndexedDB with the dataset, then walks every view, year and chapter
 // at four widths/themes, plus the landing page and settings sheet. Must report 0 issues before deploying.
+// COMPARE=1 walks compare mode instead, using the sample people (?demo=compare).
 const { chromium } = require('playwright');
 const fs = require('fs');
 const DATA = fs.readFileSync(process.argv[2], 'utf8'), UNITS = process.argv[3] || 'metric';
@@ -9,13 +10,14 @@ const AUDIT = () => {
   const vw = document.documentElement.clientWidth;
   if (document.documentElement.scrollWidth > vw + 1) issues.push(`page scrolls sideways: ${document.documentElement.scrollWidth} > ${vw}`);
   // 1. clipped / overflowing text in HTML
-  const sel = '.pn span, .ofm span, .oft, .ofb, .otn b, .oth, .otr, .wt, .wc, .ovh h2, .ovsec h2, .vt .vn, .vt .vv, .rec .rt span, .rec .rv2, .rec .rs, .demobar span, nav.chapters .ns, .rows .l, .rows .v, .rows .d, .chip, .hero .val, .hero .lab, .tag, .bname span, .bname small, .bval, .bvs .cap, .legend span, .plain h3, .rail h3, .plabel, .brand b, .delta .cap, .meta, .ctx span, .ctx b, .years button, .seg button, nav.chapters button span, .hbars .m, .hbars .nm span, .ringstats .v, .pbar div, th, td';
+  const sel = '.pn span, .ofm span, .oft, .ofb, .otn b, .oth, .otr, .wt, .wc, .ovh h2, .ovsec h2, .vt .vn, .vt .vv, .rec .rt span, .rec .rv2, .rec .rs, .demobar span, nav.chapters .ns, .rows .l, .rows .v, .rows .d, .chip, .hero .val, .hero .lab, .tag, .bname span, .bname small, .bval, .bvs .cap, .legend span, .plain h3, .rail h3, .plabel, .brand b, .delta .cap, .meta, .ctx span, .ctx b, .years button, .seg button, nav.chapters button span, .hbars .m, .hbars .nm span, .ringstats .v, .pbar div, th, td, .pchip span, .pname > span, .ct-m b, .ct-c b, .ct-c > small, .cmpsum, .covr, .tgr .m, .tgh b';
   document.querySelectorAll(sel).forEach(e => {
     const r = e.getBoundingClientRect(); if (!r.width) return;
     if (e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible' && !e.closest('.tbl-wrap')) issues.push(`clipped: "${e.textContent.trim().slice(0,40)}" (${e.className}) ${e.scrollWidth}>${e.clientWidth}`);
     // escapes its card
     const card = e.closest('.card, .ch-head, .bar-in');
-    if (card && !e.closest('.tbl-wrap')) { const c = card.getBoundingClientRect(); if (r.right > c.right + 1 || r.left < c.left - 1) issues.push(`escapes container: "${e.textContent.trim().slice(0,40)}" (${e.className})`); }
+    // scrolling containers (tables, the year row) legitimately hold items outside their visible box
+    if (card && !e.closest('.tbl-wrap, .years')) { const c = card.getBoundingClientRect(); if (r.right > c.right + 1 || r.left < c.left - 1) issues.push(`escapes container: "${e.textContent.trim().slice(0,40)}" (${e.className})`); }
   });
   // 2. chips must hug their content
   document.querySelectorAll('.chip').forEach(c => { const r = c.getBoundingClientRect(); let w = 0; c.childNodes.forEach(n => { const rg = document.createRange(); rg.selectNodeContents(n); w += rg.getBoundingClientRect().width; }); if (r.width > w + 30) issues.push(`chip stretched: "${c.textContent}" ${Math.round(r.width)} vs ${Math.round(w)}`); });
@@ -23,7 +25,7 @@ const AUDIT = () => {
   // wrapped = taller than the same element forced onto one line
   const wraps = e => { const h = e.getBoundingClientRect().height; const old = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = old; return h > h1 + 2; };
   const lineCount = e => { const old = e.style.whiteSpace; e.style.whiteSpace = 'nowrap'; const h1 = e.getBoundingClientRect().height; e.style.whiteSpace = old; return Math.round(e.getBoundingClientRect().height / Math.max(h1, 1)); };
-  document.querySelectorAll('.vt .vv, .rec .rv2, nav.chapters .ns, .chip, .hero .val, .tag, .rows .v, .rows .d, .legend span, .bval, .plabel, .delta .cap, .bvs .cap, .years button, .seg button, .hero .lab').forEach(e => { if (e.getBoundingClientRect().width && wraps(e)) issues.push(`wrapped: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
+  document.querySelectorAll('.vt .vv, .rec .rv2, nav.chapters .ns, .chip, .hero .val, .tag, .rows .v, .rows .d, .legend span, .bval, .plabel, .delta .cap, .bvs .cap, .years button, .seg button, .hero .lab, .pchip span, .ct-c b, .covr, .tgr .m').forEach(e => { if (e.getBoundingClientRect().width && wraps(e)) issues.push(`wrapped: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
   document.querySelectorAll('.rows .l, .rail h3, .win .ws, .chain .cb, .debt .sub, .act span').forEach(e => { if (lineCount(e) > 3 || (e.matches('.rows .l, .rail h3') && lineCount(e) > 2)) issues.push(`3+ lines: "${e.textContent.trim().slice(0,40)}" (${e.className})`); });
   // 3b. inside comparison rows: cells in one row must not touch, and dividers must line up
   document.querySelectorAll('.rows').forEach(g => { const cells = [...g.children]; for (let i = 0; i + 2 < cells.length; i += 3) { const [a, b, c] = cells.slice(i, i + 3).map(e => e.getBoundingClientRect());
@@ -72,7 +74,9 @@ const SHELL = () => {
       const db = await new Promise((res, rej) => { const r = indexedDB.open('health-atlas', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = rej; });
       await new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(JSON.parse(d), 'data'); t.objectStore('kv').put({ units: u, targets: { sleep: 420, sleepFloor: 360, steps: 8000, exercise: 30, daylight: 30 } }, 'settings'); t.oncomplete = res; });
     }, [DATA, UNITS]);
-    await pg.reload(); await pg.waitForSelector('#app:not([hidden]) .ch-head'); await pg.waitForTimeout(400);
+    if (process.env.COMPARE) await pg.goto('http://localhost:8123/?demo=compare'); else await pg.reload();
+    await pg.waitForSelector('#app:not([hidden]) .ch-head'); await pg.waitForTimeout(400);
+    const navN = await pg.$$eval('#nav button', x => x.length);
     const combos = [];
     for (const v of ['W','M','6M','Y','All']) combos.push([v, null]);
     const years = await pg.$$eval('#years button', bs => bs.map(x => x.firstChild.textContent));
@@ -81,7 +85,7 @@ const SHELL = () => {
     for (const [v, y] of combos) {
       await pg.click(`#views button:text-is("${v}")`);
       if (y) await pg.click(`#years button:has-text("${y}")`);
-      for (let k = 0; k < chs.length; k++) {
+      for (let k = 0; k < navN; k++) {
         await pg.click(`#nav button:nth-child(${k+1})`); await pg.waitForTimeout(260);
         add(`${w}/${theme}/${v}${y||''}/${chs[k]}`, await pg.evaluate(AUDIT));
       }

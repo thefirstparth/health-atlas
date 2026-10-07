@@ -1,4 +1,5 @@
 import { ICON, iconSvg } from './icons.js';
+import { compareKit } from './compare.js';
 // Health Atlas dashboard. Forked from the personal single-file dashboard; this file is now the source.
 // mountDashboard(data, { units: 'metric'|'imperial', targets }) renders into the page chrome in index.html.
 export const DEFAULT_TARGETS = { sleep: 420, sleepFloor: 360, steps: 8000, exercise: 30, daylight: 30 };
@@ -14,8 +15,24 @@ export function prepareData(D, OPT = {}) {
   C.workouts = C.workouts.map(w => w.km ? { ...w, km: w.km * MI } : w);
   return C;
 }
+// Lay a dataset onto a wider timeline (start..start+n-1), so several people share one day index.
+function alignData(d, start, n) {
+  const off = Math.round((Date.parse(d.meta.start + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 864e5), daily = {};
+  for (const k in d.daily) { const a = new Array(n).fill(null), src = d.daily[k]; for (let i = 0; i < src.length; i++) if (src[i] != null) a[i + off] = src[i]; daily[k] = a; }
+  return { ...d, daily, from: off, to: off + d.meta.days - 1 };
+}
 export function mountDashboard(D, OPT = {}) {
-D = prepareData(D, OPT);
+// Compare mode: OPT.people = [{ name, data }] (2 or 3). Everyone is laid onto one timeline, from the
+// earliest start to the latest end; days outside a person's own export are empty, never zero.
+let PEOPLE = null;
+if (OPT.people && OPT.people.length > 1) {
+  const ppl = OPT.people.map(x => ({ name: x.name, data: prepareData(x.data, OPT) }));
+  const start = ppl.map(x => x.data.meta.start).sort()[0], end = ppl.map(x => x.data.meta.end).sort().pop();
+  const n = Math.round((Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 864e5) + 1;
+  PEOPLE = ppl.map((x, k) => ({ k, name: x.name, D: alignData(x.data, start, n) }));
+  const sources = {}; ppl.forEach(x => Object.assign(sources, x.data.meta.sources || {}));
+  D = { meta: { start, end, days: n, sources, exportDate: null, compare: true }, daily: {}, points: {}, workouts: [] };
+} else D = prepareData(D, OPT);
 const AC = new AbortController(), SIG = { signal: AC.signal };
 const TG = { ...DEFAULT_TARGETS, ...(OPT.targets || {}) }, IMP = OPT.units === 'imperial';
 const DAY = 864e5;
@@ -24,7 +41,6 @@ const N = D.meta.days, LAST = N - 1;
 const dt = i => new Date(T0 + i * DAY);
 const di = (y, m, d) => Math.round((Date.UTC(y, m, d) - T0) / DAY);
 const isoIdx = s => di(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
-const get = (k, i) => { const a = D.daily[k]; if (!a || i < 0 || i > LAST) return null; const v = a[i]; return v == null ? null : v; };
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -36,48 +52,51 @@ const MC = document.createElement('canvas').getContext('2d');
 let SANS = 'system-ui, sans-serif';
 const tw = (t, font) => { MC.font = font; return MC.measureText(t).width; };
 
-const PTS = {};
-for (const k in D.points) PTS[k] = D.points[k].map(([d, v]) => ({ i: isoIdx(d), d, v }));
-const WK = D.workouts.map(w => ({ ...w, i: isoIdx(w.d) }));
-const TOPW = (() => { const c = {}; for (const w of D.workouts) c[w.type] = (c[w.type] || 0) + 1; return Object.entries(c).filter(([t]) => t !== 'Other').sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]); })();
+// ---------------- window statistics, one set per dataset (all datasets share the same day index)
+function makeStats(Dx) {
+  const PS = {}, TR = {};
+  const get = (k, i) => { const a = Dx.daily[k]; if (!a || i < 0 || i > LAST) return null; const v = a[i]; return v == null ? null : v; };
+  function ps(key) {
+    if (PS[key]) return PS[key];
+    const a = Dx.daily[key] || [], s = new Float64Array(N + 1), c = new Int32Array(N + 1);
+    for (let i = 0; i < N; i++) { const v = a[i]; s[i + 1] = s[i] + (v == null ? 0 : v); c[i + 1] = c[i] + (v == null ? 0 : 1); }
+    return (PS[key] = { s, c });
+  }
+  function win(key, a, b) {
+    a = Math.max(a, 0); b = Math.min(b, LAST);
+    if (b < a) return { v: null, n: 0, sum: 0 };
+    const P = ps(key), n = P.c[b + 1] - P.c[a], sum = P.s[b + 1] - P.s[a];
+    return { v: n ? sum / n : null, n, sum };
+  }
+  function extremes(key, a, b) {
+    let lo = Infinity, hi = -Infinity, loI = -1, hiI = -1;
+    for (let i = Math.max(a, 0); i <= Math.min(b, LAST); i++) { const v = get(key, i); if (v == null) continue; if (v < lo) { lo = v; loI = i; } if (v > hi) { hi = v; hiI = i; } }
+    return { lo, hi, loI, hiI };
+  }
+  function quantiles(key, a, b, qs) {
+    const v = []; for (let i = Math.max(a, 0); i <= Math.min(b, LAST); i++) { const x = get(key, i); if (x != null) v.push(x); }
+    if (v.length < 4) return null; v.sort((x, y) => x - y);
+    return qs.map(q => { const pos = (v.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos); return v[lo] + (v[hi] - v[lo]) * (pos - lo); });
+  }
+  // Centred triangular-weighted trend (box filter applied twice). Weight tapers to zero at +/-2r days.
+  function trend(key, r) {
+    const id = key + '|' + r; if (TR[id]) return TR[id];
+    const a = Dx.daily[key] || [], v = new Float64Array(N), m = new Float64Array(N);
+    for (let i = 0; i < N; i++) if (a[i] != null) { v[i] = a[i]; m[i] = 1; }
+    const box = x => { const p = new Float64Array(N + 1); for (let i = 0; i < N; i++) p[i + 1] = p[i] + x[i]; const o = new Float64Array(N); for (let i = 0; i < N; i++) { const lo = Math.max(0, i - r), hi = Math.min(N - 1, i + r); o[i] = p[hi + 1] - p[lo]; } return o; };
+    const nv = box(box(v)), nm = box(box(m)), full = (2 * r + 1) ** 2, out = new Array(N);
+    for (let i = 0; i < N; i++) out[i] = nm[i] >= 0.3 * full ? nv[i] / nm[i] : null;
+    return (TR[id] = out);
+  }
+  const PTS = {};
+  for (const k in Dx.points) PTS[k] = Dx.points[k].map(([d, v]) => ({ i: isoIdx(d), d, v }));
+  const WK = Dx.workouts.map(w => ({ ...w, i: isoIdx(w.d) }));
+  return { D: Dx, get, win, extremes, quantiles, trend, PTS, WK };
+}
+const { get, win, extremes, quantiles, trend, PTS, WK } = makeStats(D);
+const TOPW = (() => { const c = {}; for (const w of (PEOPLE ? PEOPLE.flatMap(x => x.D.workouts) : D.workouts)) c[w.type] = (c[w.type] || 0) + 1; return Object.entries(c).filter(([t]) => t !== 'Other').sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]); })();
 const WTYPES = [...TOPW.map((t, k) => [t, '--w-' + (k + 1)]), ['Other', '--w-4']];
 const wgroup = t => TOPW.includes(t) ? t : 'Other';
-
-// ---------------- window statistics
-const PS = {};
-function ps(key) {
-  if (PS[key]) return PS[key];
-  const a = D.daily[key] || [], s = new Float64Array(N + 1), c = new Int32Array(N + 1);
-  for (let i = 0; i < N; i++) { const v = a[i]; s[i + 1] = s[i] + (v == null ? 0 : v); c[i + 1] = c[i] + (v == null ? 0 : 1); }
-  return (PS[key] = { s, c });
-}
-function win(key, a, b) {
-  a = Math.max(a, 0); b = Math.min(b, LAST);
-  if (b < a) return { v: null, n: 0, sum: 0 };
-  const P = ps(key), n = P.c[b + 1] - P.c[a], sum = P.s[b + 1] - P.s[a];
-  return { v: n ? sum / n : null, n, sum };
-}
-function extremes(key, a, b) {
-  let lo = Infinity, hi = -Infinity, loI = -1, hiI = -1;
-  for (let i = Math.max(a, 0); i <= Math.min(b, LAST); i++) { const v = get(key, i); if (v == null) continue; if (v < lo) { lo = v; loI = i; } if (v > hi) { hi = v; hiI = i; } }
-  return { lo, hi, loI, hiI };
-}
-function quantiles(key, a, b, qs) {
-  const v = []; for (let i = Math.max(a, 0); i <= Math.min(b, LAST); i++) { const x = get(key, i); if (x != null) v.push(x); }
-  if (v.length < 4) return null; v.sort((x, y) => x - y);
-  return qs.map(q => { const pos = (v.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos); return v[lo] + (v[hi] - v[lo]) * (pos - lo); });
-}
-// Centred triangular-weighted trend (box filter applied twice). Weight tapers to zero at +/-2r days.
-const TR = {};
-function trend(key, r) {
-  const id = key + '|' + r; if (TR[id]) return TR[id];
-  const a = D.daily[key] || [], v = new Float64Array(N), m = new Float64Array(N);
-  for (let i = 0; i < N; i++) if (a[i] != null) { v[i] = a[i]; m[i] = 1; }
-  const box = x => { const p = new Float64Array(N + 1); for (let i = 0; i < N; i++) p[i + 1] = p[i] + x[i]; const o = new Float64Array(N); for (let i = 0; i < N; i++) { const lo = Math.max(0, i - r), hi = Math.min(N - 1, i + r); o[i] = p[hi + 1] - p[lo]; } return o; };
-  const nv = box(box(v)), nm = box(box(m)), full = (2 * r + 1) ** 2, out = new Array(N);
-  for (let i = 0; i < N; i++) out[i] = nm[i] >= 0.3 * full ? nv[i] / nm[i] : null;
-  return (TR[id] = out);
-}
 
 // ---------------- formatting
 const nf = (v, d = 0) => v == null ? '–' : v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -128,12 +147,13 @@ const U = {
   ft2: { f: v => [nf(v, 2), 'ft'], c: v => nf(v, 2), t: v => nf(v, 1), d: 'abs', dp: 2, du: 'ft' },
   ftps: { f: v => [nf(v, 2), 'ft/s'], c: v => nf(v, 2), t: v => nf(v, 1), d: 'abs', dp: 2, du: 'ft/s' },
   lb: { f: v => [nf(v, 1), 'lb'], c: v => nf(v, 1), t: v => nf(v), d: 'abs', dp: 1, du: 'lb' },
-  dur: { f: v => [fmtDur(v), ''], c: fmtDurC, t: v => nf(v / 60, 1) + 'h', d: 'dur', ax: v => v % 60 === 0 ? (v / 60) + 'h' : nf(v) + 'm' },
+  dur: { f: v => [fmtDur(v), ''], c: fmtDurC, t: v => nf(v / 60, 1) + 'h', d: 'dur', ax: v => v === 0 ? '0' : v < 60 ? nf(v) + 'm' : v % 60 === 0 ? (v / 60) + 'h' : fmtDurC(v) },
   clock: { f: v => [fmtClock(v), ''], c: fmtClockC, d: 'clock', ax: fmtClockAxis },
 };
 const F1 = (u, v) => U[u].f(v);
 const fmt = (u, v) => { const [a, b] = F1(u, v); return b ? `${a} ${b}` : a; };
-const axisFmt = u => U[u].ax || (v => nf(v, Math.abs(v - Math.round(v)) > 1e-6 ? (Math.abs(v * 10 - Math.round(v * 10)) > 1e-6 ? 2 : 1) : 0));
+const axisFmt = u => U[u].ax || Object.assign(v => nf(v, Math.abs(v - Math.round(v)) > 1e-6 ? (Math.abs(v * 10 - Math.round(v * 10)) > 1e-6 ? 2 : 1) : 0), { plain: true });
+const kFmt = v => v === 0 ? '0' : nf(v / 1000, Math.abs(v % 1000) > 1e-6 ? 1 : 0) + 'k';
 
 // ---------------- metric registry  (dir: +1 higher better, -1 lower better, 0 no single better direction)
 const DEF = {
@@ -204,6 +224,8 @@ const CH = [
   { id: 'body', name: 'Body', color: '--c-body', desc: 'Weight, height and blood pressure, as logged.', custom: 'body' },
 ];
 const CHMAP = Object.fromEntries(CH.map(c => [c.id, c]));
+// Body (weight, blood pressure) is personal and not a fair comparison, so compare mode leaves it out.
+const CHS = PEOPLE ? CH.filter(c => c.id !== 'body') : CH;
 
 // ---------------- views & periods
 const VIEWS = ['W', 'M', '6M', 'Y', 'All'];
@@ -220,7 +242,7 @@ const STRIPNAME = { day: 'DAY', week: 'WK AVG', month: 'MO AVG', year: 'YR AVG' 
 const S = { view: 'Y', ref: LAST, ch: 'overview' };
 try { S.stageMode = localStorage.getItem('ha-stage') === 'all' ? 'all' : 'labelled'; } catch (e) { S.stageMode = 'labelled'; }
 try { const s = JSON.parse(localStorage.getItem('ha-state') || 'null'); if (s && VIEWS.includes(s.view)) S.view = s.view; } catch (e) {}
-{ const h = (location.hash || '').slice(1); if (CHMAP[h]) S.ch = h; }
+{ const h = (location.hash || '').slice(1); if (CHS.some(c => c.id === h)) S.ch = h; }
 const save = () => { if (OPT.ephemeral) return; try { localStorage.setItem('ha-state', JSON.stringify({ view: S.view })); } catch (e) {} };
 
 function period(view, ref) {
@@ -346,11 +368,13 @@ function clockDom(vals) {
   for (let v = a; v <= b; v += st) t.push(v);
   return { a, b, t };
 }
+// durations (minutes): steps that read as clock time (15 min, 30 min, 1 hr ...), never "80m" above "1h"
 function durDom(vals) {
   vals = vals.filter(v => v != null);
-  const hi = Math.max(...vals, 1);
-  if (hi > 150) { const d = yDom([0, hi / 60], true, 3); return { a: 0, b: d.b * 60, t: d.t.map(v => v * 60) }; }
-  return yDom([0, hi], true, 3);
+  const hi = Math.max(...vals, 1) * 1.04;
+  const st = [5, 10, 15, 20, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1200, 1800, 2400, 3600].find(x => hi / x <= 4) || 6000;
+  const b = Math.ceil(hi / st) * st, t = []; for (let v = 0; v <= b; v += st) t.push(v);
+  return { a: 0, b, t };
 }
 function xTicks(view, p, narrow) {
   const t = [];
@@ -370,9 +394,10 @@ function frame(box, view, p, dom, opts = {}) {
   const pxDay = pw / (p.b - p.a + 1), inv = !!opts.invert;
   const y = v => mt + (inv ? (v - dom.a) / (dom.b - dom.a) : 1 - (v - dom.a) / (dom.b - dom.a)) * ph;
   const ax = sv('g', { class: 'ax' }, svg);
+  const yf = (!opts.yFmt || opts.yFmt.plain) && dom.t.some(v => Math.abs(v) >= 10000) ? kFmt : (opts.yFmt || (v => nf(v)));
   for (const tv of dom.t) {
     sv('line', { class: 'gl', x1: 0, x2: pw, y1: y(tv), y2: y(tv) }, ax);
-    const tx = sv('text', { x: pw + 10, y: y(tv) + 4 }, ax); tx.textContent = (opts.yFmt || (v => nf(v)))(tv);
+    const tx = sv('text', { x: pw + 10, y: y(tv) + 4 }, ax); tx.textContent = yf(tv);
   }
   const base = mt + ph, narrow = pw < 520;
   const xt = xTicks(view, p, narrow), font = `500 11px ${SANS}`;
@@ -423,13 +448,15 @@ const rangeOf = t => t.c ? [t.c.s, t.c.e] : t.s && t.s.s != null ? [t.s.s, t.s.e
 const dayOf = t => { const r = rangeOf(t); return r ? (r[0] + r[1]) / 2 : null; };
 function hoverLayer(F, targets, onTip) {
   const line = sv('line', { class: 'xh', y1: F.mt, y2: F.base, x1: -10, x2: -10, opacity: 0 }, F.svg);
-  const dot = sv('circle', { class: 'xdot', r: 4.5, cx: -20, cy: -20, opacity: 0 }, F.svg);
+  const dot = sv('circle', { class: 'xdot', r: 4.5, cx: -20, cy: -20, opacity: 0 }, F.svg), dots = sv('g', {}, F.svg);
   const hit = sv('rect', { class: 'hit', x: 0, y: 0, width: F.pw, height: F.H, tabindex: 0 }, F.svg);
   hit.style.touchAction = 'pan-y';
   let cur = -1;
   const place = (t, withDot) => {
     line.setAttribute('x1', t.x); line.setAttribute('x2', t.x); line.setAttribute('opacity', 1);
     if (withDot && t.ty != null) { dot.setAttribute('cx', t.x); dot.setAttribute('cy', t.ty); dot.setAttribute('opacity', 1); } else dot.setAttribute('opacity', 0);
+    // compare mode: one dot per person, in their colour
+    dots.replaceChildren(); if (t.dots) t.dots.forEach(d => sv('circle', { class: 'xdot', r: 4.5, cx: t.x, cy: d.y, style: `fill:${d.c}` }, dots));
   };
   const me = {
     show(day) {
@@ -439,7 +466,7 @@ function hoverLayer(F, targets, onTip) {
       if (k < 0) return me.hide();
       place(targets[k], true);
     },
-    hide() { line.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); },
+    hide() { line.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); dots.replaceChildren(); },
   };
   SYNC.push(me);
   const pick = k => {
@@ -557,11 +584,7 @@ function strip(F, view, p, valFn, fmts, color, label) {
     const font = `650 ${fs}px ${SANS}`;
     if (nn.every(c => tw(f(c.v), font) <= (c.x1 - c.x0) - 7)) { pick = { f, font, fs }; break outer; }
   }
-  if (!pick) { // a strip that cannot show its numbers is noise: leave it out and give the space back
-    const H2 = F.H - STRIP_H; F.svg.setAttribute('viewBox', `0 0 ${F.W} ${H2}`); F.svg.setAttribute('height', H2); F.H = H2;
-    const hit = F.svg.querySelector('.hit'); if (hit) hit.setAttribute('height', H2);
-    return;
-  }
+  if (!pick) return dropStrip(F); // a strip that cannot show its numbers is noise: leave it out and give the space back
   cells.forEach(c => {
     if (c.v == null) return;
     const t = hi > lo ? (c.v - lo) / (hi - lo) : .5, w = c.x1 - c.x0;
@@ -569,6 +592,10 @@ function strip(F, view, p, valFn, fmts, color, label) {
     if (pick) { const tx = sv('text', { x: (c.x0 + c.x1) / 2, y: y0 + hh / 2 + pick.fs * .36, 'text-anchor': 'middle', fill: css('--ink'), style: `font:${pick.font};font-variant-numeric:tabular-nums` }, F.g); tx.textContent = pick.f(c.v); }
   });
   const lt = sv('text', { x: F.W - 1, y: y0 + hh / 2 + 3.5, class: 'stripl', 'text-anchor': 'end' }, F.g); lt.textContent = label || STRIPNAME[VC[view].strip];
+}
+function dropStrip(F) {
+  const H2 = F.H - STRIP_H; F.svg.setAttribute('viewBox', `0 0 ${F.W} ${H2}`); F.svg.setAttribute('height', H2); F.H = H2;
+  const hit = F.svg.querySelector('.hit'); if (hit) hit.setAttribute('height', H2);
 }
 const fmtsFor = u => [U[u].c, U[u].t].filter(Boolean);
 function clockFmts() { return [fmtClockC]; }
@@ -595,7 +622,7 @@ function drawTrend(box, def, view, p, color) {
   if (isBar) {
     ctx.forEach(c => {
       const cx = F.x((c.s + c.e) / 2), bw = Math.max(2, Math.min(22, F.pxDay * (c.e - c.s + 1) * .62));
-      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && c.v < tgt ? bad : color, 'fill-opacity': faint, class: 'grow' }, F.g);
+      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && !r && c.v < tgt ? bad : color, 'fill-opacity': faint, class: 'grow' }, F.g);
       targets.push({ x: cx, c, ty: c.v != null ? F.y(c.v) : F.base });
     });
   } else {
@@ -630,7 +657,7 @@ function trendLegend(info, color, def, view) {
   else items.push({ t: info.ctx === 'day' ? 'Each day' : info.ctx === 'week' ? 'Weekly total' : 'Monthly total', c: color });
   if (info.base30) items.push({ t: 'Average of the last 30 days', cls: 'hl' });
   if (info.goal) items.push({ t: 'Ring goal', cls: 'hl' });
-  if (info.target) items.push({ t: 'Target', cls: 'hl' }, { t: 'Below target', c: css('--bad') });
+  if (info.target) items.push({ t: 'Target', cls: 'hl' }, { t: info.r ? 'Trend below target' : 'Below target', c: css('--bad'), cls: info.r ? 'ln' : '' });
   return legend(items);
 }
 
@@ -702,7 +729,7 @@ function metricBand(defIn, view, p, chColor) {
     list.push({ l: clk ? 'Latest' : def.night ? 'Highest night' : 'Highest day', v: F1(def.u, x.hi), x: dateShort(x.hiI, view) });
   }
   rows(B.rail, list);
-  if (!isCount) B.rail.appendChild(el('div', 'meta', `Recorded on ${cur.n} of ${daysIn(p)} ${def.night ? 'nights' : 'days'}`));
+  B.rail.appendChild(el('div', 'meta', (isCount ? '' : `Recorded on ${cur.n} of ${daysIn(p)} ${def.night ? 'nights' : 'days'}. `) + `Arrows compare with the same number of ${def.night ? 'nights' : 'days'} just before.`));
   const b = chartBox(), lg = el('div'); B.main.append(b, lg);
   mount(b, bx => { const info = drawTrend(bx, def, view, p, color); lg.replaceChildren(trendLegend(info, color, def, view)); });
   return B.c;
@@ -830,13 +857,13 @@ function sleepChapter(root, view, p, chColor) {
     const x = extremes('sl_asleep', p.a, e);
     let under = 0, hitN = 0; for (let i = Math.max(p.a, 0); i <= e; i++) { const v = get('sl_asleep', i); if (v == null) continue; if (v < FLOOR) under++; if (v >= TGT) hitN++; }
     rows(B.rail, [...windowRows(def, e, false), { l: `Nights at ${hTxt(TGT)} or more`, v: `${hitN} of ${asl.n}`, x: '' }, { l: `Nights under ${hTxt(FLOOR)}`, v: String(under), x: under ? el('span', 'chip bad', 'below floor') : '' }, { l: 'Shortest night', v: fmtDur(x.lo), x: dateShort(x.loI, view) }]);
-    B.rail.appendChild(el('div', 'meta', `Recorded on ${asl.n} of ${daysIn(p)} nights`));
+    B.rail.appendChild(el('div', 'meta', `Recorded on ${asl.n} of ${daysIn(p)} nights. Arrows compare with the same number of nights just before.`));
     const stacked = cfg.ctx === 'day', b = chartBox(); B.main.appendChild(b);
     const items = [];
     if (cfg.r) items.push({ t: `Trend, ${cfg.tn}`, c: stacked ? ink : color, cls: 'ln' });
     if (stacked) STAGES.forEach(([k, n]) => { if (win('sl_' + k, p.a, e).sum > 0) items.push({ t: n, c: colors[k] }); });
     else items.push({ t: CTXNAME[cfg.ctx], c: color, op: .35 });
-    items.push({ t: 'Below target', c: bad, cls: 'ln' }, { t: `Target ${hTxt(TGT)}`, cls: 'hl' }, { t: `Under ${hTxt(FLOOR)}`, c: bad, op: .25 });
+    items.push(cfg.r ? { t: 'Trend below target', c: bad, cls: 'ln' } : {}, { t: `Target ${hTxt(TGT)}`, cls: 'hl' }, { t: `Under ${hTxt(FLOOR)}`, c: bad, op: .25 });
     B.main.appendChild(legend(items));
     mount(b, bx => {
       const ctx = buckets(cfg.ctx, p.a, p.b).map(bk => { const w = win('sl_asleep', bk.s, bk.e), o = { ...bk, n: w.n, tot: w.v }; STAGES.forEach(([k]) => o[k] = win('sl_' + k, bk.s, bk.e).v || 0); return o; });
@@ -849,7 +876,7 @@ function sleepChapter(root, view, p, chColor) {
           if (stacked) {
             let acc = 0; const parts = STAGES.filter(([k]) => s[k] > 0);
             parts.forEach(([k], j) => { const y0 = F.y(acc), y1 = F.y(acc + s[k]); acc += s[k]; const gap = j > 0 ? 1 : 0; if (j === parts.length - 1) sv('path', { d: barPath(cx, y0 - gap, y1, bw), fill: colors[k], 'fill-opacity': r ? .7 : 1, class: 'grow' }, F.g); else sv('rect', { x: cx - bw / 2, y: y1, width: bw, height: Math.max(0, y0 - y1 - gap), fill: colors[k], 'fill-opacity': r ? .7 : 1, class: 'grow' }, F.g); });
-          } else sv('path', { d: barPath(cx, F.base, F.y(s.tot), bw), fill: s.tot < TGT ? bad : color, 'fill-opacity': .2, class: 'grow' }, F.g);
+          } else sv('path', { d: barPath(cx, F.base, F.y(s.tot), bw), fill: color, 'fill-opacity': .2, class: 'grow' }, F.g);
         }
         targets.push({ x: cx, s, ty: s.n ? F.y(s.tot) : null });
       });
@@ -878,7 +905,7 @@ function sleepChapter(root, view, p, chColor) {
     if (q) list.push({ l: 'Middle half', v: `${fmtClockC(q[0])}–${fmtClockC(q[1])}`, x: '' });
     list.push(...windowRows(def, e, false));
     rows(B.rail, list);
-    B.rail.appendChild(el('div', 'meta', `Recorded on ${mid.n} of ${daysIn(p)} nights`));
+    B.rail.appendChild(el('div', 'meta', `Recorded on ${mid.n} of ${daysIn(p)} nights. Arrows compare with the same number of nights just before.`));
     const b = chartBox(); B.main.appendChild(b);
     B.main.appendChild(legend(cfg.r ? [{ t: `Midpoint, trend ${cfg.tn}`, c: color, cls: 'ln' }, { t: 'Bedtime to wake time, trend', c: color, op: .25 }, { t: cfg.ctx === 'day' ? 'Each night' : '', c: color, op: .4 }] : [{ t: 'Asleep, first to last minute', c: color, op: .45 }, { t: 'Midpoint', c: color, cls: 'ln' }]));
     mount(b, bx => {
@@ -887,9 +914,9 @@ function sleepChapter(root, view, p, chColor) {
       if (r) for (let i = Math.max(p.a, 0); i <= e; i++) idx.push(i);
       const vals = cfg.ctx === 'day' ? ctx.flatMap(s => [s.bed.v, s.wake.v]) : idx.flatMap(i => [TB[i], TW[i]]);
       const nn = vals.filter(v => v != null); if (!nn.length) return;
-      const lo = Math.min(...nn), hi = Math.max(...nn), stepH = (hi - lo) > 900 ? 360 : (hi - lo) > 420 ? 240 : 120;
-      const a0 = Math.floor(lo / stepH) * stepH, b0 = Math.ceil(hi / stepH) * stepH, t = [];
-      for (let v = a0; v <= b0; v += stepH) t.push(v);
+      const lo = Math.min(...nn), hi = Math.max(...nn), a0 = Math.floor((lo - 15) / 60) * 60, b0 = Math.ceil((hi + 15) / 60) * 60;
+      const stepH = [60, 120, 180, 240, 360].find(x => (b0 - a0) / x <= 4) || 480, t = [];
+      for (let v = Math.ceil(a0 / stepH) * stepH; v <= b0; v += stepH) t.push(v);
       const F = frame(bx, view, p, { a: a0, b: b0, t }, { yFmt: fmtClockAxis, invert: true, strip: true, label: 'Sleep schedule' });
       const targets = [];
       if (cfg.ctx === 'day') ctx.forEach(s => {
@@ -990,6 +1017,7 @@ function ringsCard(view, p) {
     const mv = get('active', i), mg = get('moveGoal', i), ex = get('exercise', i), eg = get('exerciseGoal', i), st = get('stand', i), sg = get('standGoal', i);
     const f = [mv != null && mg ? mv / mg : null, ex != null && eg ? ex / eg : null, st != null && sg ? st / sg : null];
     if (mv != null) { days++; f.forEach((x, k) => { if (x != null && x >= 1) closed[k]++; }); }
+    if (i > LAST) { cell.classList.add('later'); const r = el('div', 'ring0'); cell.append(r, el('span', null, String(dt(i).getUTCDate()))); wrap.appendChild(cell); continue; }
     cell.appendChild(ringSvg(f, 40)); cell.appendChild(el('span', null, String(dt(i).getUTCDate())));
     const show = () => { const r = cell.getBoundingClientRect(); if (mv == null) return showTip(r.left + r.width / 2, r.top, dLong(i), [{ v: i > LAST ? 'Not yet' : 'No data' }]); showTip(r.left + r.width / 2, r.top, dLong(i), [{ v: `${nf(mv)} / ${nf(mg)} kcal`, l: 'Move', c: css('--ring-move') }, { v: `${nf(ex)} / ${nf(eg)} min`, l: 'Exercise', c: css('--ring-ex') }, { v: `${nf(st)} / ${nf(sg)} hr`, l: 'Stand', c: css('--ring-stand') }]); };
     cell.addEventListener('pointerenter', show); cell.addEventListener('focus', show); cell.addEventListener('pointerleave', hideTip); cell.addEventListener('blur', hideTip);
@@ -1280,11 +1308,13 @@ const MEDC = {};
 function leverMedCache(L, i) { const k = Math.floor(i / 7); if (!(k in MEDC)) { const q = quantiles('sl_mid', k * 7 - 89, k * 7, [.5]); MEDC[k] = q ? q[0] : null; } return MEDC[k]; }
 
 const ARROW_ACT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4 12.5 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// the shortfall adds up only the days under target, so it can be large even when the average clears it
 function debtText(L, st, e) {
-  if (L.id === 'sleep') return { v: fmtDur(st.short), u: 'short', sub: `of sleep across the last 14 nights, against ${hTxt(L.target)} a night` };
-  if (L.id === 'steps') { const d = win('distance', e - 13, e).sum, k = win('steps', e - 13, e).sum; const km = k ? st.short * d / k : null; return { v: nf(Math.round(st.short / 100) * 100), u: 'steps short', sub: `in the last 14 days, against ${nf(L.target)} a day${km ? ` · about ${nf(km, 1)} ${DU} not walked` : ''}` }; }
-  if (L.id === 'exercise') return { v: fmtDur(st.short), u: 'short', sub: `of exercise in the last 14 days, against ${L.target} minutes a day` };
-  if (L.id === 'daylight') return { v: fmtDur(st.short), u: 'short', sub: `of daylight in the last 14 days, against ${L.target} minutes a day` };
+  const miss = st.n - st.h, on = `added up over the ${miss} ${miss === 1 ? WORD(L).slice(0, -1) : WORD(L)} under`;
+  if (L.id === 'sleep') return { v: fmtDur(st.short), u: 'short', sub: `of sleep, ${on} ${hTxt(L.target)} in the last 14` };
+  if (L.id === 'steps') { const d = win('distance', e - 13, e).sum, k = win('steps', e - 13, e).sum; const km = k ? st.short * d / k : null; return { v: nf(Math.round(st.short / 100) * 100), u: 'steps short', sub: `${on} ${nf(L.target)} in the last 14${km ? ` · about ${nf(km, 1)} ${DU} not walked` : ''}` }; }
+  if (L.id === 'exercise') return { v: fmtDur(st.short), u: 'short', sub: `of exercise, ${on} ${L.target} minutes in the last 14` };
+  if (L.id === 'daylight') return { v: fmtDur(st.short), u: 'short', sub: `of daylight, ${on} ${L.target} minutes in the last 14` };
   return { v: String(st.n - st.h), u: `of ${st.n} nights`, sub: `slept more than an hour off your usual rhythm (middle of sleep near ${fmtClock(st.med)})` };
 }
 function actionText(L, st, e) {
@@ -1905,7 +1935,7 @@ let NAVPOS = null;
 function renderNav() {
   const nav = document.getElementById('nav'); nav.replaceChildren();
   const SHORT = { stress: 'Recovery', env: 'Sound & light' };
-  CH.forEach(c => { const b = el('button'); b.type = 'button'; b.title = c.name; b.append(glyph(c.id), el('span', 'nl', c.name), el('span', 'ns', SHORT[c.id] || c.name)); if (c.id === S.ch) b.setAttribute('aria-current', 'true'); b.addEventListener('click', () => go(c.id)); nav.appendChild(b); });
+  CHS.forEach(c => { const b = el('button'); b.type = 'button'; b.title = c.name; b.append(glyph(c.id), el('span', 'nl', c.name), el('span', 'ns', SHORT[c.id] || c.name)); if (c.id === S.ch) b.setAttribute('aria-current', 'true'); b.addEventListener('click', () => go(c.id)); nav.appendChild(b); });
   const cur = nav.querySelector('[aria-current]'); if (cur && getComputedStyle(nav).position === 'fixed') requestAnimationFrame(() => { const r = cur.getBoundingClientRect(), nr = nav.getBoundingClientRect(); if (r.left < nr.left || r.right > nr.right) nav.scrollLeft += r.left - nr.left - (nr.width - r.width) / 2; });
   // a single indicator slides from the previous chapter to the new one
   if (cur) {
@@ -1944,19 +1974,24 @@ function render() {
   const head = el('div', 'ch-head'), tl = el('div', 'ch-title');
   tl.append(glyph(ch.id), el('h1', null, ch.name)); head.appendChild(tl);
   const ctx = el('div', 'ctx');
-  if (ch.id === 'overview') {
+  if (CMP) {
+    head.appendChild(el('p', null, ch.id === 'overview' ? 'Two or three exports side by side. Each person keeps one colour on every chart. Averages use only the days that person recorded; days without data stay empty.' : ch.desc));
+    ctx.append(el('b', null, periodLabel(view, p)), el('span', null, CMP.ctxText(ch, view)));
+  } else if (ch.id === 'overview') {
     head.appendChild(el('p', null, 'Your last 7 days against your own usual, what stands out, your targets, and every measure. Everything here is counted from your export; nothing is estimated.'));
     const a = el('span'); a.append(el('b', null, `Week to ${dLong(e)}`)); ctx.appendChild(a);
   } else {
     head.appendChild(el('p', null, ch.desc));
     const cfg = VC[view];
-    ctx.append(el('b', null, periodLabel(view, p)), el('span', null, cfg.r ? `Trend line: weighted average of ${cfg.tn} around each day` : 'Each day shown, with your 30-day average for reference'));
+    ctx.append(el('b', null, periodLabel(view, p)), el('span', null, ch.id === 'workouts' ? `Bars: workout time each ${cfg.ctx}, stacked by sport` : cfg.r ? `Trend line: weighted average of ${cfg.tn} around each day` : 'Each day shown, with your 30-day average for reference'));
   }
   head.appendChild(ctx);
-  if (ch.id !== 'overview') { const vr = vitalsRow(ch.id, e, ch.color); if (vr) { const cap = el('div', 'vcap', `Last 30 days to ${dShort(e)}, ${dYr(e)} · line shows the last 90`); head.append(cap, vr); } }
+  if (CMP) CMP.head(head);
+  else if (ch.id !== 'overview') { const vr = vitalsRow(ch.id, e, ch.color); if (vr) { const cap = el('div', 'vcap', `Last 30 days to ${dShort(e)}, ${dYr(e)} · line shows the last 90`); head.append(cap, vr); } }
   main.appendChild(head);
   const stack = el('div', 'stack'); main.appendChild(stack);
-  if (ch.id === 'overview') overviewChapter(stack, view, p);
+  if (CMP) CMP.chapter(stack, ch, view, p);
+  else if (ch.id === 'overview') overviewChapter(stack, view, p);
   else {
     let missing = [];
     if (ch.custom === 'sleep') sleepChapter(stack, view, p, ch.color);
@@ -2006,9 +2041,15 @@ document.addEventListener('pointerdown', e => { if (ACTIVE && !(e.target.closest
 addEventListener('scroll', () => { if (ACTIVE) ACTIVE.off(); }, { passive: true, signal: AC.signal });
 
 const m = D.meta;
+// compare mode gets the dashboard's own helpers; everything it draws goes through the same chart frame
+const CMP = PEOPLE ? compareKit({ PEOPLE, S, LAST, DEF, U, VC, CHMAP, el, sv, css, tw, nf, F1, fmt, fmtDur, fmtDurC, fmtClock, hTxt, hhmm, dt, dShort, dLong, dYr, MON, WD,
+  buckets, bucketLabel, periodLabel, frame, mount, hoverLayer, showTip, hideTip, band, rows, legend, chartBox, plainCard, runs, poly, barPath, yDom, durDom, clockDom, axisFmt,
+  deltaInfo, daysIn, dateShort, go, render, glyph, makeStats, STAGES, LEVERS, WORD, onColor, declutter, dirText, isoIdx, dropStrip, RENDER, SYNC, syncTo, syncOff,
+  font: () => SANS, setActive: (v, only) => { if (only && ACTIVE !== only) return; ACTIVE = v; } }) : null;
+if (CMP) S.ref = CMP.commonEnd();
 document.getElementById('brandSub').textContent = `${MON[dt(0).getUTCMonth()]} ${dYr(0)} – ${dShort(LAST)}, ${dYr(LAST)}`;
-document.getElementById('genline').textContent = `Built from the Apple Health export dated ${(m.exportDate || '').slice(0, 10)}. Sources: ${Object.keys(m.sources).join(', ')}.`;
+document.getElementById('genline').textContent = PEOPLE ? `Comparing ${PEOPLE.map(P => `${P.name} (export dated ${(P.D.meta.exportDate || P.D.meta.end).slice(0, 10)})`).join(', ')}.` : `Built from the Apple Health export dated ${(m.exportDate || '').slice(0, 10)}. Sources: ${Object.keys(m.sources).join(', ')}.`;
 document.getElementById('tgtli').textContent = `Sleep ${hTxt(TG.sleep)} a night (floor ${hTxt(TG.sleepFloor)}), steps ${nf(TG.steps)}, exercise ${TG.exercise} minutes, daylight ${TG.daylight} minutes, sleep timing within an hour of your usual midpoint (the median of the previous 90 nights). "Needs attention" is the target you missed on the most days in the last 14. A chain counts days on target in a row; one missed day in any 7 is forgiven as a rest day, and days with no data neither count nor break it unless 4 or more in a row.`;
 render();
-return { renderPoster, posterYears, destroy() { AC.abort(); MO.disconnect(); hideTip(); document.getElementById('main').replaceChildren(); }, go };
+return { renderPoster, posterYears, compare: !!PEOPLE, destroy() { AC.abort(); MO.disconnect(); hideTip(); document.getElementById('main').replaceChildren(); }, go };
 }
