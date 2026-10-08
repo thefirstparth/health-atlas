@@ -1,7 +1,12 @@
 # Plan: switching devices (Apple Watch → Fitbit Air), without losing the long view
 
-Status: **ready, not started.** Waiting until the Fitbit Air is in use, so the work can be checked
-against a real export rather than guesses. Nothing here changes the site yet.
+Status: **Phase 1 built and tested on synthetic data** (branch `claude/awesome-gates-f3dvqg`, not on
+main). It still needs checking against a real export once the Fitbit Air is in use. Phase 2 waits for
+a real Google Takeout export.
+
+Built differently from the first draft below: device eras come from the dominant **heart rate**
+source per day (not per measure per month), with runs under 14 days folded into their neighbours,
+and stored as `meta.devices = [{ name, from, to }]`.
 
 ## The situation
 

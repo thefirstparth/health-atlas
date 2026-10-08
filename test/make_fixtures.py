@@ -74,6 +74,50 @@ def watch(days=120):
 ''')
     x.append('</HealthData>\n'); return ''.join(x)
 
+def switch_export(watch_days=200, fitbit_days=60):
+    """Apple Watch for watch_days, then a Fitbit writing through Google Health for fitbit_days.
+    Also: a sleep app that overlaps some Watch nights and alone fills nights the Watch missed,
+    a 3-day borrowed Watch inside the Fitbit period, iPhone Move-only rings after the switch,
+    and Fitbit + iPhone calories in the same hours (the hourly max must win, not the sum)."""
+    rnd = random.Random(11)
+    d0 = datetime(2025, 3, 1); total = watch_days + fitbit_days
+    W, F, P, A = 'Sam’s Apple Watch', 'Google Health', 'Sam’s iPhone', 'SleepApp'
+    x = [HEAD % T(d0 + timedelta(days=total))]
+    def sleep_rec(src, t, e, stg):
+        return f' <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="{src}" sourceVersion="1" creationDate="{T(e)}" startDate="{T(t)}" endDate="{T(e)}" value="HKCategoryValueSleepAnalysis{stg}"/>\n'
+    for i in range(total):
+        day = d0 + timedelta(days=i)
+        fitbit = i >= watch_days and not (watch_days + 30 <= i < watch_days + 33)   # 3 borrowed-Watch days
+        dev = F if fitbit else W
+        for h in range(7, 22):
+            s = day + timedelta(hours=h); e = s + timedelta(minutes=50)
+            x.append(rec(Q+'StepCount', dev, 'count', s, e, rnd.randint(200, 900)))
+            x.append(rec(Q+'StepCount', P, 'count', s, e, rnd.randint(100, 700)))
+            x.append(rec(Q+'HeartRate', dev, 'count/min', s, s, rnd.randint(58, 130)))
+            x.append(rec(Q+'ActiveEnergyBurned', dev, 'kcal', s, e, round(rnd.uniform(10, 45), 1)))
+            if fitbit: x.append(rec(Q+'ActiveEnergyBurned', P, 'kcal', s, e, round(rnd.uniform(2, 12), 1)))
+        x.append(rec(Q+'RestingHeartRate', dev, 'count/min', day, day + timedelta(hours=23), rnd.randint(52, 62) + (3 if fitbit else 0)))
+        x.append(rec(Q+'RespiratoryRate', dev, 'count/min', day + timedelta(hours=3), day + timedelta(hours=3, minutes=1), round(rnd.uniform(13, 16), 1)))
+        if not fitbit:
+            x.append(rec(Q+'HeartRateVariabilitySDNN', dev, 'ms', day + timedelta(hours=3), day + timedelta(hours=3, minutes=1), rnd.randint(30, 70)))
+            x.append(rec(Q+'TimeInDaylight', dev, 'min', day + timedelta(hours=13), day + timedelta(hours=13, minutes=20), rnd.randint(5, 40)))
+        # the night (dated by the morning), on the device worn
+        watch_missed = (not fitbit) and i % 17 == 0
+        b = day - timedelta(minutes=rnd.randint(10, 80)); t = b
+        if not watch_missed:
+            plan = (('AsleepCore', 90), ('AsleepDeep', 50), ('AsleepCore', 70), ('AsleepREM', 35), ('Awake', 6), ('AsleepCore', 60), ('AsleepREM', 30)) if fitbit else \
+                   (('AsleepCore', 80), ('AsleepDeep', 45), ('AsleepCore', 60), ('AsleepREM', 30), ('Awake', 4), ('AsleepCore', 70), ('AsleepREM', 35))
+            for stg, mins in plan:
+                e = t + timedelta(minutes=mins); x.append(sleep_rec(dev, t, e, stg)); t = e
+        # a sleep app: overlaps every 5th Watch night (must not change it), alone on nights the Watch missed
+        if (not fitbit) and (i % 5 == 0 or watch_missed):
+            e = b + timedelta(minutes=410); x.append(sleep_rec(A, b - timedelta(minutes=15), e, 'AsleepUnspecified'))
+        if fitbit:   # iPhone Move-only ring
+            x.append(f' <ActivitySummary dateComponents="{day:%Y-%m-%d}" activeEnergyBurned="{rnd.randint(120, 300)}" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="Cal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="0" appleExerciseTimeGoal="0" appleStandHours="0" appleStandHoursGoal="0"/>\n')
+        else:
+            x.append(f' <ActivitySummary dateComponents="{day:%Y-%m-%d}" activeEnergyBurned="{rnd.randint(300, 700)}" activeEnergyBurnedGoal="500" activeEnergyBurnedUnit="Cal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="{rnd.randint(5, 60)}" appleExerciseTimeGoal="30" appleStandHours="{rnd.randint(6, 14)}" appleStandHoursGoal="12"/>\n')
+    x.append('</HealthData>\n'); return ''.join(x)
+
 BOMB = '''<?xml version="1.0"?>
 <!DOCTYPE HealthData [
  <!ENTITY a "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
@@ -113,6 +157,7 @@ zipit('iphone-only.zip', iphone_only())
 zipit('iphone-imperial.zip', iphone_only(imperial=True))
 zipit('one-day.zip', one_day())
 zipit('entity-bomb.zip', BOMB)
+zipit('switch.zip', switch_export())
 with zipfile.ZipFile(os.path.join(out, 'not-health.zip'), 'w') as z: z.writestr('photos/readme.txt', 'hello')
 open(os.path.join(out, 'not-a-zip.zip'), 'w').write('this is text')
 print(sorted(os.listdir(out)))

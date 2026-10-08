@@ -1,9 +1,11 @@
 // A made-up person, four years of plausible Apple Watch data, in the same shape the parser produces.
 // Deterministic: the same day always gets the same values. Used for the demo and the home page only.
 // opts (compare demo): seed, days, endShift (export taken that many days earlier), steps / sleep / bed
-// offsets, noWatch (iPhone only: no heart, sleep, rings or workouts), gap: [from, to] day indexes with no data.
+// offsets, noWatch (iPhone only: no heart, sleep, rings or workouts), gap: [from, to] day indexes with no data,
+// switchDays: the last that many days come from a Fitbit through Google Health (as after a switch: no HRV,
+// rings, daylight or noise; resting heart rate and sleep read a little differently).
 export function sampleData(endISO, opts = {}) {
-  const O = { seed: 0, days: 1461, endShift: 0, steps: 0, sleep: 0, bed: 0, noWatch: false, gap: null, ...opts };
+  const O = { seed: 0, days: 1461, endShift: 0, steps: 0, sleep: 0, bed: 0, noWatch: false, gap: null, switchDays: 0, ...opts };
   const DAY = 864e5;
   const end = (endISO ? Date.parse(endISO + 'T00:00:00Z') : Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())) - O.endShift * DAY;
   const N = O.days, start = end - (N - 1) * DAY;
@@ -22,6 +24,7 @@ export function sampleData(endISO, opts = {}) {
     const t = start + i * DAY, d = new Date(t), wd = d.getUTCDay(), weekend = wd === 0 || wd === 6, doy = (t - Date.UTC(d.getUTCFullYear(), 0, 1)) / DAY;
     const season = Math.cos((doy - 196) / 365 * 2 * Math.PI); // +1 mid-July, -1 mid-January
     const fit = i / N;                                          // slowly getting fitter
+    const fb = O.switchDays > 0 && i >= N - O.switchDays;   // on the Fitbit
     const off = h(i, 1) < .03 || (i > 700 && i < 712) || (O.gap && i >= O.gap[0] && i <= O.gap[1]);          // watch off: a few random days and one holiday
     // workouts: about three a week
     let wmin = 0, whr = 0;
@@ -44,7 +47,7 @@ export function sampleData(endISO, opts = {}) {
       daily.standMin[i] = round(daily.stand[i] * 5.5 + gauss(i, 17) * 8, 1); daily.basal[i] = round(1690 + gauss(i, 18) * 35, 1);
       daily.daylight[i] = Math.max(0, Math.round(28 + season * 16 + (weekend ? 22 : 0) + gauss(i, 19) * 14));
       const rhr = 61 - fit * 5 + gauss(i, 20) * 1.6 + (h(i, 21) < .04 ? 5 : 0);
-      daily.rhr[i] = round(rhr, 1); daily.walkHr[i] = round(104 - fit * 5 + gauss(i, 22) * 3.5, 1);
+      daily.rhr[i] = round(rhr + (fb ? 2.5 : 0), 1); daily.walkHr[i] = round(104 - fit * 5 + gauss(i, 22) * 3.5, 1);
       daily.hrv[i] = round(Math.max(18, 44 + fit * 7 - (rhr - 58) * 2.2 + gauss(i, 23) * 8), 1); daily.resp[i] = round(14.6 + gauss(i, 24) * .45, 2);
       daily.hrMin[i] = round(rhr - 9 + gauss(i, 25) * 2.5, 1); daily.hrMax[i] = round(Math.max(118, (whr ? whr + 22 : 126) + gauss(i, 26) * 9), 1); daily.hrAvg[i] = round(74 + gauss(i, 27) * 3.5 + wmin / 30, 1);
       }
@@ -53,6 +56,7 @@ export function sampleData(endISO, opts = {}) {
       daily.stairUp[i] = h(i, 33) < .6 ? round(.46 + gauss(i, 34) * .04, 3) : null; daily.stairDown[i] = daily.stairUp[i] ? round(.52 + gauss(i, 35) * .05, 3) : null;
       if (!O.noWatch) {
       daily.envDb[i] = round(63 + gauss(i, 36) * 4.5 + (weekend ? 3 : 0), 1); daily.phoneDb[i] = h(i, 37) < .8 ? round(69 + gauss(i, 38) * 4, 1) : null;
+      if (fb) { for (const k of ['hrv', 'daylight', 'envDb', 'envEvent', 'exercise', 'exerciseGoal', 'stand', 'standGoal', 'standMin', 'moveGoal', 'mindful']) daily[k][i] = null; daily.active[i] = round(daily.active[i] * 1.08, 1); }
       if (h(i, 39) < .02) daily.envEvent[i] = 1; if (h(i, 40) < .12) daily.mindful[i] = Math.round(3 + h(i, 41) * 10);
       }
     }
@@ -63,7 +67,7 @@ export function sampleData(endISO, opts = {}) {
       const rough = 42 * Math.exp(-(((i - 560) / 70) ** 2)), better = 22 * Math.max(0, (i - 1050) / 400);   // a hard few months, then a better last year
       const asleep = Math.max(290, 406 + (weekend ? 38 : -6) + gauss(i, 45) * 34 + season * -9 - rough + better - (h(i, 44) < .06 ? 55 : 0) + O.sleep);
       const awake = Math.max(4, 17 + gauss(i, 46) * 7), wake = bed + asleep + awake;
-      const deep = asleep * (.15 + gauss(i, 47) * .018), rem = asleep * (.225 + gauss(i, 48) * .02);
+      const deep = asleep * ((fb ? .18 : .15) + gauss(i, 47) * .018), rem = asleep * ((fb ? .2 : .225) + gauss(i, 48) * .02);
       daily.sl_asleep[i] = round(asleep, 1); daily.sl_awake[i] = round(awake, 1); daily.sl_deep[i] = round(deep, 1); daily.sl_rem[i] = round(rem, 1);
       daily.sl_core[i] = round(asleep - deep - rem, 1); daily.sl_unspec[i] = 0; daily.sl_bed[i] = round(bed, 1); daily.sl_wake[i] = round(wake, 1);
       daily.sl_mid[i] = round((bed + wake) / 2, 1); daily.sl_sessions[i] = 1;
@@ -71,12 +75,12 @@ export function sampleData(endISO, opts = {}) {
     // occasional readings
     if (i % 9 === 3 && !off && !O.noWatch) points.vo2max.push([`${iso(t)}T18:40`, round(42.2 + fit * 3.6 + gauss(i, 49) * .5, 2)]);
     if (i % 6 === 1) points.weight.push([`${iso(t)}T07:10`, round(74.8 - fit * 2.4 + Math.sin(i / 60) * .5 + gauss(i, 50) * .25, 2)]);
-    if (!O.noWatch && wmin && whr > 130 && h(i, 51) < .5) points.hrRecovery.push([`${iso(t)}T19:30`, round(24 + fit * 4 + gauss(i, 52) * 3, 2)]);
+    if (!O.noWatch && !fb && wmin && whr > 130 && h(i, 51) < .5) points.hrRecovery.push([`${iso(t)}T19:30`, round(24 + fit * 4 + gauss(i, 52) * 3, 2)]);
   }
   points.height.push([`${iso(start)}T09:00`, 176]);
   const clean = {}; for (const k in daily) if (daily[k].some(v => v != null)) clean[k] = daily[k];
   return {
-    meta: { generated: 'sample', exportDate: iso(end) + ' 08:00:00 +0000', start: iso(start), end: iso(end), days: N, sources: O.noWatch ? { iPhone: 1 } : { 'Apple Watch': 1, iPhone: 1 }, sleepGoal: [], sleepSource: O.noWatch ? null : 'watch', unitsHint: 'metric', sample: true },
+    meta: { ...(O.switchDays > 0 ? { devices: [{ name: 'Apple Watch', from: iso(start), to: iso(start + (N - O.switchDays - 1) * DAY) }, { name: 'Fitbit', from: iso(start + (N - O.switchDays) * DAY), to: iso(end) }] } : {}), generated: 'sample', exportDate: iso(end) + ' 08:00:00 +0000', start: iso(start), end: iso(end), days: N, sources: O.noWatch ? { iPhone: 1 } : { 'Apple Watch': 1, iPhone: 1 }, sleepGoal: [], sleepSource: O.noWatch ? null : 'watch', unitsHint: 'metric', sample: true },
     daily: clean, points, workouts,
   };
 }

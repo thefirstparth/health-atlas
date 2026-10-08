@@ -551,3 +551,7 @@ button.ct-row{cursor:pointer}
   .sbrow{grid-template-columns:minmax(0,1fr);gap:6px}
 }
 .rows.crows{grid-template-columns:minmax(96px,1fr) max-content max-content}
+
+/* change of wearable */
+.swline{stroke:var(--ink-2);stroke-width:1.25;stroke-dasharray:3 3;pointer-events:none}
+.swlab{fill:var(--ink-2)}

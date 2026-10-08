@@ -30,8 +30,8 @@ No build step and no dependencies. What is in the repo is what is served.
 These are the same as the reference parser in `test/reference/parse_health.py`:
 
 - Cumulative measures (steps, distance, flights, daylight, resting energy) take the highest single source per hour, then add up the hours, so the Watch and iPhone are not double counted.
-- Rings come from Apple's daily Activity summaries.
-- Sleep uses Apple Watch stages, with other sleep apps used only when there is no Watch sleep at all. A night is dated by the day you woke up.
+- Rings come from Apple's daily Activity summaries. On days with no Watch ring (another wearable, or only an iPhone), active energy comes from the `ActiveEnergyBurned` readings instead, highest source per hour.
+- Sleep is chosen per night: Apple Watch stages when that night has them, otherwise the other source with the most sleep that night. A night is dated by the day you woke up.
 - Times are the local clock time written on each record.
 - Impossible dates are left out, and Settings says so: anything after the export date or before 2000, and a small cluster of days (under 60, and under 5% of all days) cut off from the rest by a gap of a year or more. A single record with a wrong clock would otherwise stretch the timeline back decades. This runs after the parser, so parity with the reference is unaffected, and also on data already saved in the browser.
 
@@ -72,6 +72,18 @@ Missing data:
 
 The same export added twice is refused, names must differ, and friends' exports stay in this browser until **End comparison** or **Forget my data**.
 
+## Changing devices
+
+Moving from an Apple Watch to another wearable that writes to Apple Health (for example Fitbit through the Google Health app) keeps one timeline. Nothing needs setting up: the export names the source of every heart rate reading, so the device behind each day is known. Someone who only ever wore one device sees no change.
+
+- **Device eras.** The device that wrote the most heart rate readings each day; a run shorter than 14 days (7 at the very end) is folded into its neighbours, so a borrowed Watch for a weekend is not a switch. Settings lists the devices and their dates.
+- **The switch is drawn, not hidden.** Charts of measures that depend on the wearable show a dashed line labelled "Fitbit from Sep 17", and trend lines break there. Two devices read differently and there is no overlap to measure by how much, so a jump on that day cannot be split into real change and device difference.
+- **Comparisons stay within one device.** "vs the 30 days before", records, streaks, "usual", year-on-year facts and the range gauge only use days from the current device; where the window crosses the switch the card says **New device** or **Not compared** instead.
+- **Measures the new device does not send** (exercise minutes, stand hours, HRV, daylight, sound on a Fitbit) say "Not recorded since you switched to Fitbit on …" instead of a silent gap.
+- **iPhone measures are not affected:** walking speed, step length, steadiness, stairs, the six-minute walk, headphone audio and Body measures carry on across the switch.
+
+A sample switch is at `?demo=switch`. The full plan, including keeping HRV continuous from a Fitbit export, is in `docs/plans/device-switch.md`.
+
 ## Dashboard 1.1
 
 Small changes that make the charts easier to read, with the design system unchanged:
@@ -109,6 +121,7 @@ node test/dashboard_qa.cjs /tmp/d.json /tmp/dqa         # dashboard's newer piec
 node test/demo_flow.cjs                                 # sample data is never stored and never replaces real data
 node test/compare_flow.cjs test/fixtures                # compare: naming, reading, reload, rename, bad and duplicate files, end
 node test/trim_timeline.mjs                             # impossible dates (1939, after the export, stray clusters) are left out
+node test/device_switch.cjs test/fixtures               # Apple Watch -> Fitbit in one export: eras, sleep and energy kept, switch drawn
 COMPARE=1 node test/layout_audit_app.cjs /tmp/d.json    # the layout audit, walking compare mode (sample people)
 ```
 

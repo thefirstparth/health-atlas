@@ -52,6 +52,13 @@ const MC = document.createElement('canvas').getContext('2d');
 let SANS = 'system-ui, sans-serif';
 const tw = (t, font) => { MC.font = font; return MC.measureText(t).width; };
 
+// ---------------- changing devices
+// meta.devices (from the parser) lists the wearable worn over time. Measures the wearable records change
+// when it changes, so trends never smooth across a switch and comparisons stay within one device.
+// Measures the iPhone (or a scale, a cuff) records carry straight on.
+const PHONE_KEYS = new Set(['walkSpeed', 'stepLen', 'doubleSupport', 'asymmetry', 'stairUp', 'stairDown', 'steadiness', 'sixMin', 'phoneDb', 'weight', 'height', 'bpSys', 'bpDia']);
+const devDep = k => !PHONE_KEYS.has(k);
+
 // ---------------- window statistics, one set per dataset (all datasets share the same day index)
 function makeStats(Dx) {
   const PS = {}, TR = {};
@@ -78,22 +85,48 @@ function makeStats(Dx) {
     if (v.length < 4) return null; v.sort((x, y) => x - y);
     return qs.map(q => { const pos = (v.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos); return v[lo] + (v[hi] - v[lo]) * (pos - lo); });
   }
+  // device eras: index of each switch day, and which era a day is in
+  const ERAS = (Dx.meta.devices || []).map(d => ({ ...d, a: isoIdx(d.from), b: isoIdx(d.to) }));
+  const SW = ERAS.slice(1).map(e => e.a).filter(a => a > 0 && a <= LAST);
+  const era = i => { let k = 0; for (const s of SW) if (i >= s) k++; return k; };
   // Centred triangular-weighted trend (box filter applied twice). Weight tapers to zero at +/-2r days.
+  // Computed separately on each side of a switch of wearable, so the line breaks there.
+  function smoothInto(a, r, lo, hi, out) {
+    const n = hi - lo; if (n <= 0) return;
+    const v = new Float64Array(n), m = new Float64Array(n);
+    for (let i = 0; i < n; i++) if (a[lo + i] != null) { v[i] = a[lo + i]; m[i] = 1; }
+    const box = x => { const p = new Float64Array(n + 1); for (let i = 0; i < n; i++) p[i + 1] = p[i] + x[i]; const o = new Float64Array(n); for (let i = 0; i < n; i++) { const l = Math.max(0, i - r), h = Math.min(n - 1, i + r); o[i] = p[h + 1] - p[l]; } return o; };
+    const nv = box(box(v)), nm = box(box(m)), full = (2 * r + 1) ** 2;
+    for (let i = 0; i < n; i++) out[lo + i] = nm[i] >= 0.3 * full ? nv[i] / nm[i] : null;
+  }
   function trend(key, r) {
     const id = key + '|' + r; if (TR[id]) return TR[id];
-    const a = Dx.daily[key] || [], v = new Float64Array(N), m = new Float64Array(N);
-    for (let i = 0; i < N; i++) if (a[i] != null) { v[i] = a[i]; m[i] = 1; }
-    const box = x => { const p = new Float64Array(N + 1); for (let i = 0; i < N; i++) p[i + 1] = p[i] + x[i]; const o = new Float64Array(N); for (let i = 0; i < N; i++) { const lo = Math.max(0, i - r), hi = Math.min(N - 1, i + r); o[i] = p[hi + 1] - p[lo]; } return o; };
-    const nv = box(box(v)), nm = box(box(m)), full = (2 * r + 1) ** 2, out = new Array(N);
-    for (let i = 0; i < N; i++) out[i] = nm[i] >= 0.3 * full ? nv[i] / nm[i] : null;
+    const a = Dx.daily[key] || [], out = new Array(N).fill(null);
+    let lo = 0; for (const hi of [...(devDep(key) ? SW : []), N]) { smoothInto(a, r, lo, hi, out); lo = hi; }
+    // leave the switch day itself empty, so the drawn line visibly breaks instead of joining the two devices
+    if (devDep(key)) for (const s of SW) out[s] = null;
     return (TR[id] = out);
   }
   const PTS = {};
   for (const k in Dx.points) PTS[k] = Dx.points[k].map(([d, v]) => ({ i: isoIdx(d), d, v }));
   const WK = Dx.workouts.map(w => ({ ...w, i: isoIdx(w.d) }));
-  return { D: Dx, get, win, extremes, quantiles, trend, PTS, WK };
+  return { D: Dx, get, win, extremes, quantiles, trend, PTS, WK, ERAS, SW, era };
 }
-const { get, win, extremes, quantiles, trend, PTS, WK } = makeStats(D);
+const { get, win, extremes, quantiles, trend, PTS, WK, ERAS, SW, era } = makeStats(D);
+// the whole of [a, b] was recorded by one device (always true for what the iPhone records)
+const oneDevice = (key, a, b) => !devDep(key) || era(Math.max(a, 0)) === era(Math.min(b, LAST));
+const eraStart = i => { let s0 = 0; for (const s of SW) if (i >= s) s0 = s; return s0; };
+const NOTCMP = { cls: 'flat', txt: 'Not compared', arrow: '' }, NEWDEV = { cls: 'flat', txt: 'New device', arrow: '' };
+// hero comparison with the previous period, unless a device change sits between them
+const vsPrev = (key, pp, e, info) => !pp ? [null, ''] : oneDevice(key, pp.a, e) ? [info, pp.label] : [NOTCMP, 'a device change sits in between'];
+// a measure that stopped at a switch: recorded in the 60 days before it, and on under 10% of the days
+// since (a borrowed Watch for a weekend does not count as it coming back). Returns { s, n } or null.
+function stoppedAt(key) {
+  const k = SW.length - 1; if (k < 0) return null;
+  const s = SW[k], pts = PTS[key] || [], after = win(key, s, LAST).n + pts.filter(q => q.i >= s).length;
+  if (after >= .1 * (LAST - s + 1)) return null;
+  return win(key, s - 60, s - 1).n || pts.some(q => q.i >= s - 60 && q.i < s) ? { s, n: after } : null;
+}
 const TOPW = (() => { const c = {}; for (const w of (PEOPLE ? PEOPLE.flatMap(x => x.D.workouts) : D.workouts)) c[w.type] = (c[w.type] || 0) + 1; return Object.entries(c).filter(([t]) => t !== 'Other').sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0]); })();
 const WTYPES = [...TOPW.map((t, k) => [t, '--w-' + (k + 1)]), ['Other', '--w-4']];
 const wgroup = t => TOPW.includes(t) ? t : 'Other';
@@ -418,13 +451,42 @@ function frame(box, view, p, dom, opts = {}) {
   const g = sv('g', { class: 'marks' }, pg), fg = sv('g', { class: 'fore' }, svg);
   box.replaceChildren(svg);
   const F = { svg, g, fg, x, y, W, H, pw, ph, mt, pxDay, base, stripY: base + 25, narrow, p, zoom: opts.zoom !== false };
+  if (opts.dev && devDep(opts.dev)) switchMarks(F);
   box.__F = F;
   return F;
+}
+// a dashed line where the wearable changed, named, so a step in the data reads as a change of device
+function switchMarks(F) {
+  for (const s of SW) {
+    if (s <= F.p.a || s > F.p.b) continue;
+    const X = F.x(s) - F.pxDay / 2, txt = `${ERAS[era(s)].name} from ${dShort(s)}`, w = tw(txt, `600 10.5px ${SANS}`), right = X + 5 + w <= F.pw - 2;
+    sv('line', { class: 'swline', x1: X, x2: X, y1: F.mt - 6, y2: F.base }, F.g);
+    const t = sv('text', { class: 'reflab halo swlab', x: right ? X + 5 : X - 5, y: F.mt + 6, 'text-anchor': right ? 'start' : 'end' }, F.g); t.textContent = txt; t.dataset.x = X;
+  }
+}
+// once the chart is drawn: move each switch label to the first spot clear of value pills and other labels
+// (top or bottom of the plot, either side of the line); with no clear spot the line stays, unlabelled
+function placeSwitchLabels(F) {
+  const labs = [...F.svg.querySelectorAll('text.swlab')]; if (!labs.length) return;
+  const hit = (a, b) => a.x < b.x + b.width + 3 && b.x < a.x + a.width + 3 && a.y < b.y + b.height + 2 && b.y < a.y + a.height + 2;
+  const taken = [...F.svg.querySelectorAll('g.pill rect, text.reflab:not(.swlab), text.stripel')].map(n => n.getBBox());
+  for (const t of labs) {
+    const X = +t.dataset.x, spots = [];
+    for (const y of [F.mt + 6, F.base - 6, F.mt + 22, F.base - 22]) spots.push([X + 5, y, 'start'], [X - 5, y, 'end']);
+    let placed = false;
+    for (const [x, y, a] of spots) {
+      t.setAttribute('x', x); t.setAttribute('y', y); t.setAttribute('text-anchor', a);
+      const bb = t.getBBox(); if (bb.x < 0 || bb.x + bb.width > F.pw) continue;
+      if (!taken.some(o => hit(bb, o))) { taken.push(bb); placed = true; break; }
+    }
+    if (!placed) t.remove();
+  }
 }
 // After a chart is drawn: labels, pills and the strip move to the foreground layer (they never stretch),
 // then, on a period change, the marks zoom or slide from where the previous period sat.
 function finalize(F) {
   if (!F || F.done) return; F.done = true;
+  placeSwitchLabels(F);
   F.g.querySelectorAll('text, g.pill, .stripel').forEach(n => { if (n.tagName === 'text' && n.closest('g.pill')) return; F.fg.appendChild(n); });
   if (!ZOOM && ANIM && F.g.animate && 'IntersectionObserver' in window) {
     // first time a chapter opens, each chart is drawn left to right as it scrolls into view
@@ -617,7 +679,7 @@ function drawTrend(box, def, view, p, color) {
   const tgt = def.target != null ? def.target : null, bad = css('--bad');
   const vals = [...ctx.map(c => c.v), ...tl.map(t => t.v), base30, goal, tgt, def.floor];
   const dom = def.u === 'clock' ? clockDom(vals) : def.u === 'dur' ? durDom(vals) : yDom(vals, isBar, 3);
-  const F = frame(box, view, p, dom, { yFmt: axisFmt(def.u), strip: true, label: def.t });
+  const F = frame(box, view, p, dom, { yFmt: axisFmt(def.u), strip: true, label: def.t, dev: def.key });
   const faint = r ? (cfg.ctx === 'day' ? .3 : .2) : 1, targets = [];
   if (isBar) {
     ctx.forEach(c => {
@@ -704,8 +766,8 @@ function windowRows(def, e, isCount) {
   for (const n of [30, 90]) {
     const cur = win(def.key, e - n + 1, e); if (!cur.n && !isCount) continue;
     const v = f(e - n + 1, e), prevN = win(def.key, e - 2 * n + 1, e - n).n, pv = prevN || isCount ? f(e - 2 * n + 1, e - n) : null;
-    const info = deltaInfo(def.u, def.dir, v, pv);
-    out.push({ l: `Last ${n} ${def.night ? 'nights' : 'days'}${isCount ? ', total' : ''}`, v: F1(def.u, v), x: info ? chipEl(info, `vs the ${n} ${def.night ? 'nights' : 'days'} before: ${fmt(def.u, pv)}`) : '' });
+    const same = oneDevice(def.key, e - 2 * n + 1, e), info = same ? deltaInfo(def.u, def.dir, v, pv) : NEWDEV;
+    out.push({ l: `Last ${n} ${def.night ? 'nights' : 'days'}${isCount ? ', total' : ''}`, v: F1(def.u, v), x: info ? chipEl(info, same ? `vs the ${n} ${def.night ? 'nights' : 'days'} before: ${fmt(def.u, pv)}` : `Not compared: the ${n} ${def.night ? 'nights' : 'days'} before were recorded by another device`) : '' });
   }
   return out;
 }
@@ -715,12 +777,12 @@ function metricBand(defIn, view, p, chColor) {
   const color = css(def.color || chColor);
   if (def.k === 'points') return pointsBand(def, view, p, color);
   const e = Math.min(p.b, LAST), isCount = def.k === 'count', cur = win(def.key, p.a, e);
-  if (!cur.n) return { missing: def.t };
+  if (!cur.n) return { missing: def.t, key: def.key };
   const B = band(def, color);
   const pp = prevPeriod(view, p), v = isCount ? cur.sum : cur.v;
   let pv = null; if (pp) { const r = win(def.key, pp.a, pp.b); pv = isCount ? r.sum : r.v; }
   const lab = isCount ? 'Total' : def.night ? 'Average per night' : def.k === 'bar' ? 'Daily average' : 'Average';
-  hero(B.rail, lab, F1(def.u, v), pp ? deltaInfo(def.u, def.dir, v, pv) : null, pp ? pp.label : '');
+  hero(B.rail, lab, F1(def.u, v), ...vsPrev(def.key, pp, e, pp ? deltaInfo(def.u, def.dir, v, pv) : null));
   const list = windowRows(def, e, isCount);
   if (!def.night && def.k === 'bar' && ['km', 'mi', 'min', 'floors'].includes(def.u) && view !== 'W') list.push({ l: 'Total in period', v: F1(def.u, cur.sum), x: '' });
   if (!isCount && cur.n > 1) {
@@ -740,7 +802,8 @@ function pointsBand(def, view, p, color, extraRows) {
   const e = Math.min(p.b, LAST), pts = pointsIn(def.key, p.a, e);
   const before = all.filter(q => q.i <= e), last = before[before.length - 1] || all[0], prevR = before.filter(q => q.i < last.i).pop();
   const B = band(def, color);
-  hero(B.rail, (pts.length ? 'Latest · ' : 'Most recent · ') + dShort(last.i) + ', ' + dYr(last.i), F1(def.u, last.v), prevR ? deltaInfo(def.u, def.dir, last.v, prevR.v) : null, prevR ? `vs ${dShort(prevR.i)}, ${dYr(prevR.i)} reading` : '');
+  const prevOk = prevR && oneDevice(def.key, prevR.i, last.i);
+  hero(B.rail, (pts.length ? 'Latest · ' : 'Most recent · ') + dShort(last.i) + ', ' + dYr(last.i), F1(def.u, last.v), prevR ? (prevOk ? deltaInfo(def.u, def.dir, last.v, prevR.v) : NOTCMP) : null, prevR ? (prevOk ? `vs ${dShort(prevR.i)}, ${dYr(prevR.i)} reading` : 'the reading before was from another device') : '');
   const list = [{ l: 'Readings in period', v: String(pts.length), x: '' }];
   if (pts.length > 1) {
     const lo = pts.reduce((a, b) => b.v < a.v ? b : a), hi = pts.reduce((a, b) => b.v > a.v ? b : a);
@@ -760,7 +823,7 @@ function pointTrend(key, r, a, b) {
   const all = PTS[key] || [], H = 2 * r, out = [];
   for (let i = a; i <= b; i++) {
     let sw = 0, sv2 = 0, n = 0;
-    for (const q of all) { const d = Math.abs(q.i - i); if (d > H) continue; const w = H + 1 - d; sw += w; sv2 += w * q.v; n++; }
+    for (const q of all) { const d = Math.abs(q.i - i); if (d > H || (devDep(key) && era(q.i) !== era(i))) continue; const w = H + 1 - d; sw += w; sv2 += w * q.v; n++; }
     out.push({ i, v: n >= 3 ? sv2 / sw : null });
   }
   return out;
@@ -770,11 +833,11 @@ function drawPoints(box, def, view, p, color, key2, color2) {
   const e = Math.min(p.b, LAST), pts = pointsIn(def.key, p.a, e), pts2 = key2 ? pointsIn(key2, p.a, e) : [];
   const withTrend = !key2 && pointsTrendOn(def, view, p);
   const tl = withTrend ? pointTrend(def.key, VC[view].r, Math.max(p.a, 0), e) : [];
-  const F = frame(box, view, p, yDom([...pts, ...pts2].map(q => q.v).concat(tl.map(t => t.v)), false, 3), { yFmt: axisFmt(def.u), label: def.t });
+  const F = frame(box, view, p, yDom([...pts, ...pts2].map(q => q.v).concat(tl.map(t => t.v)), false, 3), { yFmt: axisFmt(def.u), label: def.t, dev: def.key });
   const surf = css('--card');
   const plot = (arr, c) => {
-    const xy = dedupeX(arr.map(q => [F.x(q.i), F.y(q.v)]));
-    if (!withTrend && xy.length > 1) sv('path', { d: smooth(xy), fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-opacity': .5, class: 'draw' }, F.g);
+    const eraOf = q => devDep(def.key) ? era(q.i) : 0;
+    if (!withTrend) for (const k of new Set(arr.map(eraOf))) { const xy = dedupeX(arr.filter(q => eraOf(q) === k).map(q => [F.x(q.i), F.y(q.v)])); if (xy.length > 1) sv('path', { d: smooth(xy), fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-opacity': .5, class: 'draw' }, F.g); }
     arr.forEach(q => sv('circle', { cx: F.x(q.i), cy: F.y(q.v), r: withTrend ? 3.2 : 4.5, fill: c, 'fill-opacity': withTrend ? .35 : 1, stroke: withTrend ? 'none' : surf, 'stroke-width': 2, class: 'draw' }, F.g));
   };
   plot(pts, color); if (key2) plot(pts2, color2);
@@ -792,10 +855,10 @@ function dedupeX(xy) { const out = []; for (const p of xy) { if (out.length && M
 function rangeBand(view, p, chColor) {
   const color = css(chColor), e = Math.min(p.b, LAST);
   const lo = win('hrMin', p.a, e), hi = win('hrMax', p.a, e), mid = win('hrAvg', p.a, e);
-  if (!lo.n) return { missing: 'Heart rate' };
+  if (!lo.n) return { missing: 'Heart rate', key: 'hrAvg' };
   const def = { key: 'hrAvg', t: 'Heart rate', u: 'bpm', dir: 0, dirText: 'Daily low to high', ex: 'Your lowest and highest heart rate each day, and the all-day average. A wide range is normal on active days.' };
   const B = band(def, color), pp = prevPeriod(view, p);
-  hero(B.rail, 'All-day average', F1('bpm', mid.v), pp ? deltaInfo('bpm', 0, mid.v, win('hrAvg', pp.a, pp.b).v) : null, pp ? pp.label : '');
+  hero(B.rail, 'All-day average', F1('bpm', mid.v), ...vsPrev('hrAvg', pp, e, pp ? deltaInfo('bpm', 0, mid.v, win('hrAvg', pp.a, pp.b).v) : null));
   const xl = extremes('hrMin', p.a, e), xh = extremes('hrMax', p.a, e);
   rows(B.rail, [{ l: 'Average daily low', v: F1('bpm', lo.v), x: '' }, { l: 'Average daily high', v: F1('bpm', hi.v), x: '' }, { l: 'Lowest reading', v: F1('bpm', xl.lo), x: dateShort(xl.loI, view) }, { l: 'Highest reading', v: F1('bpm', xh.hi), x: dateShort(xh.hiI, view) }]);
   B.rail.appendChild(el('div', 'meta', `Recorded on ${lo.n} of ${daysIn(p)} days`));
@@ -806,7 +869,7 @@ function rangeBand(view, p, chColor) {
     const r = cfg.r, TL = r ? trend('hrMin', r) : null, TH = r ? trend('hrMax', r) : null, TM = r ? trend('hrAvg', r) : null, idx = [];
     if (r) for (let i = Math.max(p.a, 0); i <= e; i++) idx.push(i);
     const vals = cfg.ctx === 'day' ? ctx.flatMap(c => [c.lo, c.hi]) : idx.flatMap(i => [TL[i], TH[i]]);
-    const F = frame(bx, view, p, yDom(vals, false, 4), { yFmt: v => nf(v), strip: true, label: 'Heart rate' });
+    const F = frame(bx, view, p, yDom(vals, false, 4), { yFmt: v => nf(v), strip: true, label: 'Heart rate', dev: 'hrAvg' });
     const targets = [];
     if (cfg.ctx === 'day') ctx.forEach(c => { const cx = F.x(c.s), cw = Math.max(3, Math.min(10, F.pxDay * .5)); if (c.lo != null) capsule(F.g, cx, F.y(c.lo), F.y(c.hi), cw, color, r ? .35 : 1); if (!r && c.mid != null) sv('line', { x1: cx - cw, x2: cx + cw, y1: F.y(c.mid), y2: F.y(c.mid), stroke: css('--card'), 'stroke-width': 2 }, F.g); targets.push({ x: cx, c, ty: c.hi != null ? F.y(c.hi) : null }); });
     else ctx.forEach(c => targets.push({ x: F.x((c.s + c.e) / 2), c, ty: c.hi != null ? F.y(c.hi) : null }));
@@ -833,7 +896,7 @@ function renderBands(root, list, view, p, chColor) {
     if (item && item.sec) { pendingSec = item.sec; continue; }
     const r = item && item.range ? rangeBand(view, p, chColor) : metricBand(item, view, p, chColor);
     if (!r) continue;
-    if (r.missing) { missing.push(r.missing); continue; }
+    if (r.missing) { missing.push(r); continue; }
     if (pendingSec) { root.appendChild(el('div', 'section-label', pendingSec)); pendingSec = null; }
     root.appendChild(r);
   }
@@ -853,7 +916,7 @@ function sleepChapter(root, view, p, chColor) {
   // 1. time asleep
   {
     const def = DEF.sl_asleep, B = band(def, color);
-    hero(B.rail, 'Average per night', F1('dur', asl.v), pp ? deltaInfo('dur', 1, asl.v, win('sl_asleep', pp.a, pp.b).v) : null, pp ? pp.label : '');
+    hero(B.rail, 'Average per night', F1('dur', asl.v), ...vsPrev('sl_asleep', pp, e, pp ? deltaInfo('dur', 1, asl.v, win('sl_asleep', pp.a, pp.b).v) : null));
     const x = extremes('sl_asleep', p.a, e);
     let under = 0, hitN = 0; for (let i = Math.max(p.a, 0); i <= e; i++) { const v = get('sl_asleep', i); if (v == null) continue; if (v < FLOOR) under++; if (v >= TGT) hitN++; }
     rows(B.rail, [...windowRows(def, e, false), { l: `Nights at ${hTxt(TGT)} or more`, v: `${hitN} of ${asl.n}`, x: '' }, { l: `Nights under ${hTxt(FLOOR)}`, v: String(under), x: under ? el('span', 'chip bad', 'below floor') : '' }, { l: 'Shortest night', v: fmtDur(x.lo), x: dateShort(x.loI, view) }]);
@@ -868,7 +931,7 @@ function sleepChapter(root, view, p, chColor) {
     mount(b, bx => {
       const ctx = buckets(cfg.ctx, p.a, p.b).map(bk => { const w = win('sl_asleep', bk.s, bk.e), o = { ...bk, n: w.n, tot: w.v }; STAGES.forEach(([k]) => o[k] = win('sl_' + k, bk.s, bk.e).v || 0); return o; });
       const r = cfg.r, T = r ? trend('sl_asleep', r) : null, idx = []; if (r) for (let i = Math.max(p.a, 0); i <= e; i++) idx.push(i);
-      const F = frame(bx, view, p, durDom([...ctx.map(c => c.tot), ...idx.map(i => T[i]), TGT]), { yFmt: U.dur.ax, strip: true, label: 'Time asleep' });
+      const F = frame(bx, view, p, durDom([...ctx.map(c => c.tot), ...idx.map(i => T[i]), TGT]), { yFmt: U.dur.ax, strip: true, label: 'Time asleep', dev: 'sl_asleep' });
       const targets = [];
       ctx.forEach(s => {
         const cx = F.x((s.s + s.e) / 2), bw = Math.max(2, Math.min(22, F.pxDay * (s.e - s.s + 1) * .62));
@@ -900,7 +963,7 @@ function sleepChapter(root, view, p, chColor) {
     const bed = win('sl_bed', p.a, e), wake = win('sl_wake', p.a, e), mid = win('sl_mid', p.a, e), q = quantiles('sl_mid', p.a, e, [.25, .75]);
     const def = { key: 'sl_mid', t: 'Sleep schedule', u: 'clock', dir: 0, night: true, dirText: 'Regular is better', ex: 'When sleep began and ended. The line is the midpoint, halfway between. A narrower, flatter band means a steadier schedule. Rows below are averages; "middle half" is where half of your nights’ midpoints fell.' };
     const B = band(def, color);
-    hero(B.rail, 'Average midpoint', F1('clock', mid.v), pp ? deltaInfo('clock', 0, mid.v, win('sl_mid', pp.a, pp.b).v) : null, pp ? pp.label : '');
+    hero(B.rail, 'Average midpoint', F1('clock', mid.v), ...vsPrev('sl_mid', pp, e, pp ? deltaInfo('clock', 0, mid.v, win('sl_mid', pp.a, pp.b).v) : null));
     const list = [{ l: 'Bedtime', v: fmtClock(bed.v), x: '' }, { l: 'Wake time', v: fmtClock(wake.v), x: '' }];
     if (q) list.push({ l: 'Middle half', v: `${fmtClockC(q[0])}–${fmtClockC(q[1])}`, x: '' });
     list.push(...windowRows(def, e, false));
@@ -917,7 +980,7 @@ function sleepChapter(root, view, p, chColor) {
       const lo = Math.min(...nn), hi = Math.max(...nn), a0 = Math.floor((lo - 15) / 60) * 60, b0 = Math.ceil((hi + 15) / 60) * 60;
       const stepH = [60, 120, 180, 240, 360].find(x => (b0 - a0) / x <= 4) || 480, t = [];
       for (let v = Math.ceil(a0 / stepH) * stepH; v <= b0; v += stepH) t.push(v);
-      const F = frame(bx, view, p, { a: a0, b: b0, t }, { yFmt: fmtClockAxis, invert: true, strip: true, label: 'Sleep schedule' });
+      const F = frame(bx, view, p, { a: a0, b: b0, t }, { yFmt: fmtClockAxis, invert: true, strip: true, label: 'Sleep schedule', dev: 'sl_mid' });
       const targets = [];
       if (cfg.ctx === 'day') ctx.forEach(s => {
         const cx = F.x(s.s), cw = Math.max(4, Math.min(12, F.pxDay * .55));
@@ -972,7 +1035,7 @@ function sleepChapter(root, view, p, chColor) {
       const b = chartBox(); B.main.appendChild(b);
       mount(b, bx => {
         const bks = buckets(cfg.strip, p.a, p.b).filter(bk => bk.s <= LAST);
-        const F = frame(bx, view, p, { a: 0, b: 1, t: [0, .25, .5, .75, 1] }, { yFmt: v => nf(v * 100) + '%', h: 170, label: 'Sleep stage share' });
+        const F = frame(bx, view, p, { a: 0, b: 1, t: [0, .25, .5, .75, 1] }, { yFmt: v => nf(v * 100) + '%', h: 170, label: 'Sleep stage share', dev: 'sl_deep' });
         const targets = [], lab = `650 10.5px ${SANS}`, labels = [];
         bks.forEach(bk => {
           const vals = STG.map(([k]) => win('sl_' + k, bk.s, bk.e).v || 0), T = vals.reduce((a2, b2) => a2 + b2, 0);
@@ -1148,6 +1211,7 @@ function tapestryCard(view, p, chColor) {
     rws.forEach((r, k) => { const d = dt(r.s), Y = y(k) + rh / 2; const first = weekly ? d.getUTCDate() <= 7 : n <= 14 || k === 0 || (n <= 62 ? d.getUTCDay() === 1 : d.getUTCDate() === 1); if (!first || Y - lastY < 14) return; const t = sv('text', { x: pw + 10, y: Y + 4 }, ax); t.textContent = n <= 14 ? `${WD[d.getUTCDay()]} ${d.getUTCDate()}` : weekly && d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : weekly ? MON[d.getUTCMonth()] : (k === 0 || d.getUTCMonth() === 0) && n > 40 ? `${MON[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}` : `${MON[d.getUTCMonth()]}${n <= 40 ? ' ' + d.getUTCDate() : ''}`; lastY = Y; });
     const g = sv('g', {}, svg), gap = rh > 5 ? 1.5 : 0, h = Math.max(.8, rh - gap);
     rws.forEach((r, k) => { if (r.bed == null || r.wake == null) return; const X0 = x(r.bed), X1 = x(r.wake); sv('rect', { class: 'tap', x: X0, y: y(k) + gap / 2, width: Math.max(1, X1 - X0), height: h, rx: Math.min(3, h / 2), fill: !weekly && r.asl != null && r.asl < FLOOR ? bad : color, 'fill-opacity': .88 }, g).style.setProperty('--k', k); });
+    for (const sw of SW) { const k = rws.findIndex(r => sw >= r.s && sw <= r.e); if (k <= 0) continue; const Y = y(k); sv('line', { class: 'swline', x1: 0, x2: pw, y1: Y, y2: Y }, svg); const t = sv('text', { class: 'reflab halo swlab', x: 4, y: Y - 4 }, svg); t.textContent = `${ERAS[era(sw)].name} from ${dShort(sw)}`; }
     const rf = `600 10.5px ${SANS}`, xb = x(mb), xw = x(mw);
     let lb = 'Usual bedtime ' + fmtClock(mb), lw2 = 'Usual wake ' + fmtClock(mw);
     if (xb - 5 - tw(lb, rf) < 0 || xw + 5 + tw(lw2, rf) > W || xw - xb < 12) { lb = 'Bed ' + fmtClock(mb); lw2 = 'Wake ' + fmtClock(mw); }
@@ -1181,16 +1245,16 @@ function workoutsChapter(root, view, p, chColor) {
   const cur = tot(p.a, e), pp = prevPeriod(view, p), pv = pp ? tot(pp.a, pp.b) : null;
   {
     const B = band({ t: 'Workout time', dir: 1, ex: 'Minutes of recorded workouts, stacked by sport. Common guidance is 150 minutes or more of moderate activity a week.' }, color);
-    hero(B.rail, 'Total time', [fmtDur(cur.m), ''], pv ? deltaInfo('min', 1, cur.m, pv.m) : null, pp ? pp.label : '');
+    hero(B.rail, 'Total time', [fmtDur(cur.m), ''], ...vsPrev('_workouts', pp, e, pv ? deltaInfo('min', 1, cur.m, pv.m) : null));
     const list = [{ l: 'Sessions', v: nf(cur.n), x: '' }, { l: 'Active energy', v: F1('kcal', cur.k), x: '' }];
     if (cur.km) list.push({ l: 'Distance', v: [nf(cur.km, 1), DU], x: '' });
-    for (const n of [30, 90]) { const a = tot(e - n + 1, e), b2 = tot(e - 2 * n + 1, e - n), info = deltaInfo('min', 1, a.m, b2.m); list.push({ l: `Last ${n} days`, v: fmtDur(a.m), x: info ? chipEl(info, `vs the ${n} days before: ${fmtDur(b2.m)}`) : '' }); }
+    for (const n of [30, 90]) { const a = tot(e - n + 1, e), b2 = tot(e - 2 * n + 1, e - n), same = oneDevice('_workouts', e - 2 * n + 1, e), info = same ? deltaInfo('min', 1, a.m, b2.m) : NEWDEV; list.push({ l: `Last ${n} days`, v: fmtDur(a.m), x: info ? chipEl(info, same ? `vs the ${n} days before: ${fmtDur(b2.m)}` : `Not compared: the ${n} days before were recorded by another device`) : '' }); }
     rows(B.rail, list);
     const b = chartBox(); B.main.appendChild(b);
     B.main.appendChild(legend(WTYPES.filter(([t]) => ws.some(w => wgroup(w.type) === t)).map(([t]) => ({ t: t === 'Other' ? 'Other sports' : t, c: tcol[t] }))));
     mount(b, bx => {
       const ser = buckets(cfg.ctx, p.a, p.b).map(bk => { const o = { ...bk, n: 0, list: [] }; WTYPES.forEach(([t]) => o[t] = 0); ws.forEach(w => { if (w.i >= bk.s && w.i <= bk.e) { o[wgroup(w.type)] += w.min; o.n++; o.list.push(w); } }); o.tot = WTYPES.reduce((t, [k2]) => t + o[k2], 0); return o; });
-      const F = frame(bx, view, p, durDom(ser.map(s => s.tot)), { yFmt: U.dur.ax, strip: true, label: 'Workout time' });
+      const F = frame(bx, view, p, durDom(ser.map(s => s.tot)), { yFmt: U.dur.ax, strip: true, label: 'Workout time', dev: '_workouts' });
       const targets = [];
       ser.forEach(s => {
         const cx = F.x((s.s + s.e) / 2), bw = Math.max(2, Math.min(22, F.pxDay * (s.e - s.s + 1) * .62));
@@ -1332,7 +1396,7 @@ function targetChart(box, L, e, med, color) {
   const T = rhythm ? med : L.target;
   const dom = rhythm ? clockDom([...vals, T - 75, T + 75]) : (L.u === 'dur' ? (() => { const d = yDom([...vals, T, L.floor].map(v => v / 60), false, 4); return { a: d.a * 60, b: d.b * 60, t: d.t.map(v => v * 60) }; })() : yDom([...vals, T, L.floor], false, 4));
   if (!rhythm && dom.a < 0) { dom.t = dom.t.filter(v => v >= 0); dom.a = 0; }
-  const F = frame(box, 'W', p, dom, { yFmt: axisFmt(L.u), h: 190, invert: false, label: L.t + ', last 14 days' });
+  const F = frame(box, 'W', p, dom, { yFmt: axisFmt(L.u), h: 190, invert: false, label: L.t + ', last 14 days', dev: L.key });
   const targets = [];
   if (rhythm) {
     const y1 = F.y(T - L.band), y2 = F.y(T + L.band);
@@ -1553,10 +1617,12 @@ function pulseRows(e) {
   const out = [];
   for (const [k, ch] of PULSE) {
     const def = pdef(k); if (!def) continue;
-    const cur = wkVal(k, e - 6, e); if (cur == null) continue;
-    const base = []; for (let j = 1; j <= 26; j++) { const v = wkVal(k, ...wkRange(e, j)); if (v != null) base.push(v); }
+    // usual = weeks recorded by the same device as the last 7 days (a week across a switch is left out)
+    const now = ([a, b]) => !devDep(k) || (era(Math.max(a, 0)) === era(e) && era(b) === era(e));
+    const cur = now([e - 6, e]) ? wkVal(k, e - 6, e) : null; if (cur == null) continue;
+    const base = []; for (let j = 1; j <= 26; j++) { if (!now(wkRange(e, j))) break; const v = wkVal(k, ...wkRange(e, j)); if (v != null) base.push(v); }
     if (base.length < 8) continue;
-    const prev = wkVal(k, ...wkRange(e, 1));
+    const prev = now(wkRange(e, 1)) ? wkVal(k, ...wkRange(e, 1)) : null;
     const s = [...base].sort((a, b) => a - b), q = f => { const pos = (s.length - 1) * f, lo = Math.floor(pos), hi = Math.ceil(pos); return s[lo] + (s[hi] - s[lo]) * (pos - lo); };
     const q25 = q(.25), med = q(.5), q75 = q(.75), mn = s[0], mx = s[s.length - 1];
     const sc = Math.max((q75 - q25) / 1.349, MINSTEP[def.u] || Math.abs(med) * .02 || 1), z = v => (v - med) / sc;
@@ -1577,7 +1643,8 @@ function pulseCard(root, e) {
   const rowsD = pulseRows(e); if (rowsD.length < 3) return;
   const c = el('section', 'card pulse');
   const hd = el('div', 'ovh');
-  hd.append(el('h2', null, 'The last 7 days, against your usual'), el('p', 'mono', `${rangeTxt(e - 6, e)} · usual is the middle half of your previous ${Math.max(...rowsD.map(r => r.n))} weeks`));
+  const since = SW.length && era(e) > 0 ? ` · for what ${ERAS[era(e)].name} records, only weeks since ${dShort(eraStart(e))}` : '';
+  hd.append(el('h2', null, 'The last 7 days, against your usual'), el('p', 'mono', `${rangeTxt(e - 6, e)} · usual is the middle half of your previous ${Math.max(...rowsD.map(r => r.n))} weeks${since}`));
   c.appendChild(hd);
   const lg = el('div', 'plg mono'); lg.innerHTML = `<span><svg viewBox="0 0 22 10"><rect x="1" y="1" width="20" height="8" rx="4"/></svg>Usual</span><span><svg viewBox="0 0 22 10"><line x1="1" y1="5" x2="21" y2="5"/></svg>Lowest to highest week</span><span><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.3"/></svg>The 7 days before</span><span><svg viewBox="0 0 10 10"><circle class="f" cx="5" cy="5" r="4"/></svg>Last 7 days</span>`;
   c.appendChild(lg);
@@ -1635,7 +1702,10 @@ function factList(e) {
   // 1. a 7-day average further out than any week for a long stretch
   for (const [k, ch] of PULSE) {
     const def = pdef(k); if (!def) continue;
-    const J = Math.floor((e - 6) / 7), vals = []; for (let j = 0; j <= J; j++) vals.push(wkVal(k, ...wkRange(e, j)));
+    // only weeks from the device that recorded the last 7 days
+    const J0 = Math.floor((e - 6) / 7), vals = [];
+    for (let j = 0; j <= J0; j++) { const [a1, b1] = wkRange(e, j); if (devDep(k) && (era(Math.max(a1, 0)) !== era(e) || era(b1) !== era(e))) break; vals.push(wkVal(k, a1, b1)); }
+    const J = vals.length - 1, onDevice = J < J0;
     const cur = vals[0]; if (cur == null) continue;
     for (const hi of [true, false]) {
       let cnt = 0, since = -1;
@@ -1643,7 +1713,7 @@ function factList(e) {
       if (cnt < 12) continue;
       const [a0, b0] = since > 0 ? wkRange(e, since) : [0, 0], clock = def.u === 'clock';
       const firstJ = (() => { for (let j = J; j > 0; j--) if (vals[j] != null) return j; return 0; })();
-      const title = `${HILO[k][hi ? 0 : 1]} ${since > 0 ? 'since ' + monYr(b0) : 'in your data'}`;
+      const title = `${HILO[k][hi ? 0 : 1]} ${since > 0 ? 'since ' + monYr(b0) : onDevice ? 'since you started with ' + ERAS[era(e)].name : 'in your data'}`;
       const cmp = clock ? (hi ? 'later' : 'earlier') : (hi ? 'higher' : 'lower');
       const body = `${vTxt(def.u, cur)} ${PER[k] || 'on average'} over the last 7 days. ` + (since > 0 ? `The last week ${cmp} was ${rangeTxt(a0, b0)} (${vTxt(def.u, vals[since])}).` : `No earlier week was ${cmp}, back to ${monYr(wkRange(e, firstJ)[0])}.`);
       const show = Math.min(J, Math.max(cnt + 8, 26), 156);
@@ -1656,14 +1726,15 @@ function factList(e) {
   for (const [k, lab, sgn] of REC) {
     const a = D.daily[k]; if (!a || !DEF[k]) continue;
     const argb = (lo, hi) => { let b = -1; for (let i = lo; i <= hi; i++) { const v = a[i]; if (v != null && (b < 0 || (v - a[b]) * sgn > 0)) b = i; } return b; };
-    const bi = argb(e - 6, e), pi = argb(0, e - 7);
+    // a record counts only against days from the same device
+    const from = devDep(k) ? eraStart(e) : 0, bi = argb(Math.max(e - 6, from), e), pi = argb(from, e - 7);
     if (bi < 0 || pi < 0 || (a[bi] - a[pi]) * sgn <= 0) continue;
-    if (win(k, 0, e - 7).n < 180) continue;
+    if (win(k, from, e - 7).n < 180) continue;
     const ch = k === 'rhr' ? 'heart' : k === 'hrv' ? 'stress' : k === 'daylight' ? 'env' : 'activity';
     out.push({ kind: 'rec', ch, k, score: 78, title: `New record: ${lab.charAt(0).toLowerCase() + lab.slice(1)}`, body: `${vTxt(DEF[k].u, a[bi])} on ${dLong(bi)}. The previous best was ${vTxt(DEF[k].u, a[pi])}, on ${dShort(pi)}, ${dYr(pi)}.`, cls: 'good', when: dShort(bi),
       viz: s => factDays(s, k, e, bi, pi, css(DEF[k].color || CHMAP[ch].color)) });
   }
-  { const v = (PTS.vo2max || []).filter(q => q.i <= e); if (v.length >= 6) { const last = v[v.length - 1], prior = v.slice(0, -1), best = prior.reduce((x, q) => q.v > x.v ? q : x); if (last.i >= e - 6 && last.v > best.v) out.push({ kind: 'rec', ch: 'heart', k: 'vo2max', score: 74, title: 'Highest cardio fitness reading yet', body: `${vTxt(DEF.vo2max.u, last.v)} on ${dLong(last.i)}, above the previous best of ${vTxt(DEF.vo2max.u, best.v)} (${dShort(best.i)}, ${dYr(best.i)}).`, cls: 'good', when: dShort(last.i), viz: s => factPoints(s, v.slice(-40), best, css(CHMAP.heart.color)) }); } }
+  { const v = (PTS.vo2max || []).filter(q => q.i <= e && era(q.i) === era(e)); if (v.length >= 6) { const last = v[v.length - 1], prior = v.slice(0, -1), best = prior.reduce((x, q) => q.v > x.v ? q : x); if (last.i >= e - 6 && last.v > best.v) out.push({ kind: 'rec', ch: 'heart', k: 'vo2max', score: 74, title: 'Highest cardio fitness reading yet', body: `${vTxt(DEF.vo2max.u, last.v)} on ${dLong(last.i)}, above the previous best of ${vTxt(DEF.vo2max.u, best.v)} (${dShort(best.i)}, ${dYr(best.i)}).`, cls: 'good', when: dShort(last.i), viz: s => factPoints(s, v.slice(-40), best, css(CHMAP.heart.color)) }); } }
   // 3. a run of days on target
   for (const L of LEVERS) {
     const rn = leverRuns(L, e); if (rn.cur < 7) continue;
@@ -1674,9 +1745,9 @@ function factList(e) {
   }
   // 4. the last 30 days against the same 30 days a year earlier
   for (const [k, ch] of [['rhr', 'heart'], ['hrv', 'stress'], ['steps', 'activity'], ['sl_asleep', 'sleep'], ['exercise', 'activity'], ['walkSpeed', 'mobility'], ['daylight', 'env']]) {
-    const def = DEF[k]; if (!def || e - 394 < 0) continue;
+    const def = DEF[k]; if (!def || e - 394 < 0 || !oneDevice(k, e - 394, e)) continue;
     const a = win(k, e - 29, e), b = win(k, e - 394, e - 365); if (a.n < 15 || b.n < 15) continue;
-    const blocks = []; for (let j = 0; e - 30 * j - 29 >= 0 && j < 36; j++) { const r = win(k, e - 30 * j - 29, e - 30 * j); if (r.n >= 15) blocks.push(r.v); }
+    const blocks = []; for (let j = 0; e - 30 * j - 29 >= 0 && j < 36 && oneDevice(k, e - 30 * j - 29, e); j++) { const r = win(k, e - 30 * j - 29, e - 30 * j); if (r.n >= 15) blocks.push(r.v); }
     if (blocks.length < 8) continue;
     const mu = blocks.reduce((x, y) => x + y, 0) / blocks.length, sd = Math.sqrt(blocks.reduce((x, y) => x + (y - mu) ** 2, 0) / (blocks.length - 1));
     const d = a.v - b.v; if (!(sd > 0) || Math.abs(d) < 1.2 * sd || Math.abs(d) < 2 * (MINSTEP[def.u] || 0)) continue;
@@ -1889,33 +1960,40 @@ function overviewChapter(root, view, p) {
       const nm = el('div', 'bname'); nm.appendChild(el('span', null, def.t)); nm.appendChild(el('small', null, def.key === '_workouts' ? 'Higher is better' : (dirText(def) || 'No single better direction'))); row.appendChild(nm);
       const vwrap = el('div'); vwrap.appendChild(el('div', 'bl', def.k === 'points' ? 'Latest' : def.key === '_workouts' ? 'Last 30 days, total' : def.k === 'bar' ? 'Last 30 days, daily avg' : 'Last 30 days, avg'));
       const vv = el('div', 'bval'); const [a1, b1] = F1(def.u, v); vv.appendChild(document.createTextNode(a1)); if (b1) vv.appendChild(el('small', null, b1)); vwrap.appendChild(vv); row.appendChild(vwrap);
-      const vs = el('div', 'bvs'); const info = deltaInfo(def.u, def.dir, v, pv); if (info) { vs.appendChild(chipEl(info)); if (pv != null) vs.appendChild(el('span', 'cap', `from ${U[def.u].c(pv)}`)); } row.appendChild(vs);
+      const same = oneDevice(def.key, e - 59, e), vs = el('div', 'bvs'), info = same ? deltaInfo(def.u, def.dir, v, pv) : NEWDEV;
+      if (info) { vs.appendChild(chipEl(info, same ? '' : 'Not compared: the 30 days before were recorded by another device')); if (same && pv != null) vs.appendChild(el('span', 'cap', `from ${U[def.u].c(pv)}`)); } row.appendChild(vs);
       const sp = el('div', 'bspark'); sp.appendChild(el('div', 'bl', 'Last 12 months'));
-      const mv = m12.map(m => S2.bucket(m.a, m.b)); const s = sv('svg', { height: 40, 'aria-hidden': 'true' }); sp.appendChild(s); row.appendChild(sp);
-      RENDER.push(() => sparkMonths(s, mv, c2));
+      // a month that straddles a change of device is left out, so the line breaks there
+      const mv = m12.map(m => oneDevice(def.key, m.a, m.b) ? S2.bucket(m.a, m.b) : null); const s = sv('svg', { height: 40, 'aria-hidden': 'true' }); sp.appendChild(s); row.appendChild(sp);
+      const splitK = m12.findIndex(m => !oneDevice(def.key, m.a, m.b));
+      RENDER.push(() => sparkMonths(s, mv, c2, splitK));
       const rg = el('div', 'brange'); rg.appendChild(el('div', 'bl', 'Where it sits in your range'));
-      const mvals = allMonths.map(m => S2.bucket(m.s, m.e)).filter(x => x != null);
+      const mvals = allMonths.filter(m => !devDep(def.key) || (era(m.s) === era(e) && era(m.e) === era(e))).map(m => S2.bucket(m.s, m.e)).filter(x => x != null);
       const gsv = sv('svg', { height: 36, 'aria-hidden': 'true' }); rg.appendChild(gsv); row.appendChild(rg);
-      RENDER.push(() => gauge(gsv, mvals, v, c2, def.u));
+      RENDER.push(() => gauge(gsv, mvals, v, c2, def.u, devDep(def.key) && SW.length && era(e) > 0 ? ERAS[era(e)].name : null));
       board.appendChild(row);
     }
   }
   root.appendChild(board);
 }
 
-function sparkMonths(s, vals, color) {
+function sparkMonths(s, vals, color, splitK = -1) {
   s.replaceChildren();
   const W = Math.max(s.clientWidth || 160, 120), H = 40; s.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const nn = vals.filter(v => v != null); if (!nn.length) return;
   const lo = Math.min(...nn), hi = Math.max(...nn), pad = (hi - lo) * .2 || Math.abs(hi) * .05 || 1;
   const x = k => 5 + k / 11 * (W - 10), y = v => H - 6 - (v - lo + pad) / (hi - lo + 2 * pad) * (H - 12);
+  if (splitK >= 0) sv('line', { class: 'swline', x1: x(splitK), x2: x(splitK), y1: 2, y2: H - 2 }, s);   // the month the device changed
   const pts = vals.map((v, k) => v == null ? null : [x(k), y(v)]);
   runs(pts, 1).forEach(r => { if (r.length > 1) { const d = smooth(r); sv('path', { d: d + `L${r[r.length - 1][0]},${H}L${r[0][0]},${H}Z`, fill: areaGrad(s, color, .16) }, s); sv('path', { d, fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linecap': 'round' }, s); } });
   pts.forEach((pt, k) => pt && sv('circle', { cx: pt[0], cy: pt[1], r: k === pts.length - 1 ? 3.5 : 1.8, fill: color, stroke: k === pts.length - 1 ? css('--card') : 'none', 'stroke-width': 2 }, s));
 }
-function gauge(s, mvals, cur, color, u) {
-  s.replaceChildren(); if (!mvals.length) return;
+function gauge(s, mvals, cur, color, u, device) {
+  s.replaceChildren();
   const W = Math.max(s.clientWidth || 160, 140), H = 36; s.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  // a range needs a few whole months; right after a change of device there are not enough yet
+  if (device && mvals.length < 3) { const t = sv('text', { x: 0, y: 15, class: 'reflab' }, s); t.textContent = `Builds after 3 months on ${device}`; return; }
+  if (!mvals.length) return;
   const mn = Math.min(...mvals), mx = Math.max(...mvals), lo = Math.min(mn, cur), hi = Math.max(mx, cur), avg = mvals.reduce((a, b) => a + b, 0) / mvals.length;
   const x = v => 7 + (hi > lo ? (v - lo) / (hi - lo) : .5) * (W - 14);
   sv('line', { x1: 7, x2: W - 7, y1: 11, y2: 11, stroke: css('--grid'), 'stroke-width': 6, 'stroke-linecap': 'round' }, s);
@@ -2002,7 +2080,11 @@ function render() {
       missing = renderBands(stack, ch.cards, view, p, ch.color);
     }
     if ((view === 'Y' || view === 'All') && CAL[ch.id] && win(CAL[ch.id], p.a, p.b).n) { const cc = calendarCard(CAL[ch.id], view, p, ch.color); if (cc) stack.appendChild(cc); }
-    if (missing.length) stack.appendChild(el('div', 'missing', 'Not recorded in this period: ' + missing.join(', ') + '.'));
+    // a measure that stopped at a change of device is said plainly, with the date
+    const stop = new Map(), rest = [];
+    for (const m of missing) { const st = m.key != null ? stoppedAt(m.key) : null; if (st && p.a >= st.s - 60) { if (!stop.has(st.s)) stop.set(st.s, []); stop.get(st.s).push(m.missing + (st.n ? ` (only ${st.n} day${st.n === 1 ? '' : 's'} since)` : '')); } else rest.push(m.missing || m); }
+    for (const [s, names] of stop) stack.appendChild(el('div', 'missing', `Not recorded since you switched to ${ERAS[era(s)].name} on ${dShort(s)}, ${dYr(s)}: ${names.join(', ')}. ${ERAS[era(s) - 1] ? ERAS[era(s) - 1].name : 'The previous device'} recorded ${names.length > 1 ? 'these' : 'this'}; ${ERAS[era(s)].name} does not send ${names.length > 1 ? 'them' : 'it'} to Apple Health.`));
+    if (rest.length) stack.appendChild(el('div', 'missing', 'Not recorded in this period: ' + rest.join(', ') + '.'));
     if (!stack.children.length) stack.appendChild(el('div', 'missing', 'Nothing recorded in this period.'));
   }
   const prevR = LASTR; LASTR = { ch: S.ch, a: p.a, b: p.b };

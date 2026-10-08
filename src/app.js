@@ -34,6 +34,7 @@ function openDashboard() {
   if (CMP && cmpPeople().length < 2) CMP = null;
   show('app');
   $('demoBar').hidden = !DEMO || EMBED;
+  if (DEMO) $('demoBar').querySelector('span').innerHTML = DEMO.meta.devices ? '<b>Sample data.</b> A made-up person who moved from an Apple Watch to a Fitbit 75 days ago.' : '<b>Sample data.</b> A made-up person, so you can look around.';
   $('cmpBar').hidden = !CMP || EMBED;
   $('shareBtn').hidden = !!CMP;
   if (CMP) {
@@ -44,7 +45,7 @@ function openDashboard() {
   } else dash = mountDashboard(DEMO || DATA, { units: units(), targets: SET.targets, ephemeral: !!DEMO });
 }
 // Sample data: a made-up person, never stored, never mixed with your own data.
-function openDemo() { DEMO = sampleData(); CMP = null; openDashboard(); }
+function openDemo(opts) { DEMO = sampleData(undefined, opts); CMP = null; openDashboard(); }
 function closeDemo() {
   DEMO = null; try { history.replaceState(null, '', location.pathname); } catch (e) {}
   if (DATA) openDashboard(); else { if (dash) { dash.destroy(); dash = null; } show('landing'); }
@@ -93,6 +94,8 @@ function resetWorker() { if (worker) worker.terminate(); worker = makeWorker(); 
 // says what trimTimeline left out, with the dates that gave it away
 const trimNote = m => { const t = m.trimmed; if (!t) return ''; const n = t.days + t.readings, outer = [t.from < m.start ? fmtDay(t.from) : null, t.to > m.end ? fmtDay(t.to) : null].filter(Boolean);
   return ` Left out ${n.toLocaleString()} ${n === 1 ? 'entry' : 'entries'} dated far outside the rest of your data${outer.length ? ` (${outer.join(' and ')})` : ''}, most likely from a wrong clock.`; };
+// the wearables the export was recorded with, once there has been a change
+const deviceNote = m => { const d = m.devices || []; if (d.length < 2) return ''; return ' Devices: ' + d.map((x, k) => k === d.length - 1 ? `${x.name} from ${fmtDay(x.from)}` : `${x.name} ${k ? `${fmtDay(x.from)} – ` : 'until '}${fmtDay(x.to)}`).join('; ') + '.'; };
 const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 $('cancel').addEventListener('click', () => { if (cmpCancel) { cmpCancel(); return; } resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
@@ -131,7 +134,7 @@ $('menuBtn').addEventListener('click', () => {
   if (demo) $('dataInfo').textContent = 'You are looking at sample data from made-up people. Settings you change here are not saved.';
   else if (CMP) $('dataInfo').textContent = `Comparing ${listNames(CMP.people.map(x => x.name))}. Their exports are kept only in this browser until you end the comparison.`;
   const m = DATA && DATA.meta, src = m ? Object.keys(m.sources || {}).length : 0;
-  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.${trimNote(m)}`;
+  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.${trimNote(m)}${deviceNote(m)}`;
   disarm();
   dlg.showModal();
 });
@@ -319,6 +322,6 @@ async function runCompare(slots) {
   // data saved before trimTimeline existed is trimmed on load (and saved again, so it happens once)
   if (d) { try { DATA = trimTimeline(validateData(d)); if (DATA !== d) store.set('data', DATA).catch(() => {}); } catch (e) { DATA = null; } }
   if (c) { try { CMP = validateCompare(c); } catch (e) { CMP = null; } }
-  if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo();
+  if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo(Q.get('demo') === 'switch' ? { switchDays: 75 } : undefined);
   else if (DATA || (CMP && cmpPeople().length > 1)) openDashboard(); else show('landing');
 })();
