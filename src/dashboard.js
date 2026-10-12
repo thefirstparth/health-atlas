@@ -220,6 +220,7 @@ const DEF = {
   hrv: { t: 'Heart rate variability', u: 'ms', k: 'line', dir: 1, ex: 'Tiny variation in the time between heartbeats (SDNN). Higher usually means better recovered. Very personal: compare with your own trend.' },
   resp: { t: 'Respiratory rate', u: 'br', k: 'line', dir: 0, ex: 'Breaths per minute while you sleep. 12 to 20 is the typical adult range; a steady number is normal.' },
   mindful: { t: 'Mindful minutes', u: 'min', k: 'count', dir: 1, ex: 'Minutes logged in breathing or mindfulness sessions.' },
+  irregular: { t: 'Irregular rhythm notifications', u: 'times', k: 'count', dir: -1, ex: 'Alerts when the watch or band saw a rhythm suggestive of atrial fibrillation (AFib) in the background. Not a diagnosis: show any to a doctor.' },
   highHr: { t: 'High heart rate alerts', u: 'times', k: 'count', dir: -1, ex: 'Alerts when heart rate stayed above your limit for 10 minutes while you seemed inactive.' },
   walkSpeed: { t: 'Walking speed', u: 'kmh', k: 'line', dir: 1, ex: 'How fast you walk on flat ground. A widely used marker of overall mobility.' },
   stepLen: { t: 'Step length', u: 'cm', k: 'line', dir: 1, ex: 'Distance between heel strikes of consecutive steps. Longer usually goes with stronger walking.' },
@@ -269,12 +270,14 @@ const dirText = def => def.key in SPECIAL_DIR ? SPECIAL_DIR[def.key] : (DIRTXT[d
 // ---------------- chapters
 // a vault's measures (VAULT_KEYS) appear only for a dataset that has them, so nobody else sees them listed as missing
 const HAS = k => [D, ...(PEOPLE || []).map(P => P.D)].some(x => (x.daily[k] || []).some(v => v != null));
-const vk = list => list.filter(c => typeof c !== 'string' || !VAULT_KEYS.includes(c) || HAS(c));
+// AFib notifications too: most people never get one, so the card appears only for someone who has
+const OPTIONAL = new Set([...VAULT_KEYS, 'irregular']);
+const vk = list => list.filter(c => typeof c !== 'string' || !OPTIONAL.has(c) || HAS(c));
 const AIR = HAS('pm25Night') || HAS('tMax');
 const CH = [
   { id: 'overview', name: 'Overview', color: '--c-overview' },
   { id: 'heart', name: 'Heart', color: '--c-heart', desc: 'Heart rate through the day, at rest and while walking, with cardio fitness and recovery readings.',
-    cards: [{ range: true }, 'rhr', 'walkHr', 'vo2max', 'hrRecovery', 'highHr'] },
+    cards: vk([{ range: true }, 'rhr', 'walkHr', 'vo2max', 'hrRecovery', 'highHr', 'irregular']) },
   { id: 'stress', name: 'Stress & Recovery', color: '--c-stress', desc: 'The signals that reflect how rested your body is: heart rate variability, resting heart rate and breathing during sleep.',
     cards: vk(['hrv', 'hrvRmssd', 'hrvRel', 'rhr', 'resp', 'skinTemp', 'spo2', 'mindful']) },
   { id: 'sleep', name: 'Sleep', color: '--c-sleep', desc: 'How long you slept, how that sleep was made up, and when it happened. Each night is dated by the morning you woke up.', custom: 'sleep' },
@@ -929,6 +932,8 @@ function renderBands(root, list, view, p, chColor) {
   for (const item of list) {
     if (item && item.sec) { pendingSec = item.sec; continue; }
     if (typeof item === 'string' && VAULT_KEYS.includes(item) && p.b < firstDay(item)) continue;
+    // no AFib notification in a period is good news, not missing data
+    if (item === 'irregular' && !win('irregular', p.a, Math.min(p.b, LAST)).n) { root.appendChild(el('div', 'missing', 'No irregular rhythm notifications in this period.')); continue; }
     const r = item && item.range ? rangeBand(view, p, chColor) : metricBand(item, view, p, chColor);
     if (!r) continue;
     if (r.missing) { missing.push(r); continue; }

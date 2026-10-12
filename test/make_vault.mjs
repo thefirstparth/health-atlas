@@ -54,6 +54,9 @@ for (let d = addDays(last, -91); d <= last; d = addDays(d, 1)) {
     rec.g.distance = { millimetersSum: String(5200000 + i * 1000) };
     rec.g['active-zone-minutes'] = { sumInFatBurnHeartZone: '12', sumInCardioHeartZone: '6', sumInPeakHeartZone: '1' };
     rec.g['total-calories'] = { kcalSum: 2310.5 };
+    rec.g['heart-rate'] = { beatsPerMinuteMin: 50 + (i % 3), beatsPerMinuteAvg: 71.43 + (i % 5), beatsPerMinuteMax: 140 + (i % 4) * 5 };
+    rec.g['active-energy-burned'] = { kcalSum: 480.6 + i * 3 };
+    if (i === 12) rec.g['irregular-rhythm-notification'] = [{ interval: { startTime: ist(d, '04:10'), startUtcOffset: IST, endTime: ist(d, '04:55'), endUtcOffset: IST }, _id: 'irn1', ...FB }];
   }
   days[d] = rec;
 }
