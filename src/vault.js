@@ -166,6 +166,13 @@ export function vaultDataset(monthValues) {
       const v = fit(g['daily-vo2-max']), pv = points.vo2max[points.vo2max.length - 1];
       if (v && num(v.vo2Max) != null && (!pv || pv[1] !== r(num(v.vo2Max)) || T(d) - T(pv[0].slice(0, 10)) >= 7 * 864e5)) points.vo2max.push([d + 'T12:00', r(num(v.vo2Max))]);
       if (g.steps) o.steps = num(g.steps.countSum);
+      // the day's heart-rate range and active energy: Google's daily roll-ups (the Heart range chart, Active energy)
+      const hr = g['heart-rate'];
+      if (hr) { o.hrMin = num(hr.beatsPerMinuteMin); o.hrMax = num(hr.beatsPerMinuteMax); o.hrAvg = r(num(hr.beatsPerMinuteAvg)); }
+      if (g['active-energy-burned'] && num(g['active-energy-burned'].kcalSum) != null) o.active = r(num(g['active-energy-burned'].kcalSum));
+      // irregular rhythm (AFib) notifications from the band, counted on the day they started
+      const irn = list(g['irregular-rhythm-notification']).filter(x => x && x._platform === FITBIT);
+      if (irn.length) o.irregular = irn.length;
       if (g.distance && num(g.distance.millimetersSum) != null) o.distance = r(num(g.distance.millimetersSum) / 1e6, 2);
       const az = g['active-zone-minutes'];
       if (az) { const p = ['sumInFatBurnHeartZone', 'sumInCardioHeartZone', 'sumInPeakHeartZone'].map(k => num(az[k])).filter(x => x != null); if (p.length) o.azm = p.reduce((a, b) => a + b, 0); }

@@ -48,6 +48,14 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
   ok(await p.$$eval('.swlab', x => x.some(e => /Fitbit from/.test(e.textContent))), 'the switch is marked on the charts');
   await ch(p, 'Activity');
   ok((await cardTitles(p)).some(x => /Active Zone Minutes/.test(x)), 'Activity: Active Zone Minutes');
+  await p.click('#views button:text-is("M")'); await p.waitForTimeout(300);
+  ok((await cardTitles(p)).some(x => /^Active energy/.test(x)), 'Activity: active energy carries on in the Fitbit month');
+  await ch(p, 'Heart');
+  t = await cardTitles(p);
+  ok(t.some(x => /^Heart rate$/.test(x)) && !/Not recorded[^.]*Heart rate[,.]/.test(await p.textContent('.stack')), 'Heart: the day’s heart-rate range carries on in the Fitbit month: ' + t.join(' | '));
+  ok(/No irregular rhythm notifications in this period/.test(await p.textContent('.stack')), 'Heart: a month without AFib notifications says so plainly');
+  await p.click('#views button:text-is("Y")'); await p.waitForTimeout(300);
+  ok((await cardTitles(p)).some(x => /Irregular rhythm notifications/.test(x)), 'Heart: the year with one shows the AFib notification card');
   await ch(p, 'Environment & Hearing');
   txt = await p.textContent('.stack');
   ok(/Air and weather where you live/.test(txt) && (await cardTitles(p)).some(x => /Air while you slept/.test(x)), 'Environment: air and weather section');

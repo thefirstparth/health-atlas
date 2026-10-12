@@ -43,6 +43,9 @@ const nap = info.fitFrom && D.daily.sl_sessions.findIndex((v, i) => i >= f0 && v
 ok(nap > 0 && D.daily.sl_asleep[nap] === 470 && D.daily.sl_bed[nap] === -30, 'a nap adds to the night’s total but not to its bedtime');
 ok(D.daily.steps[f0] === 7000 && D.daily.steps[f0 - 1] !== 9000, 'steps: the Fitbit era from the vault; earlier days keep the Apple export’s own count');
 ok(D.daily.azm[f0] === 19 && D.daily.distance[f0] === 5.2, 'active zone minutes and distance');
+ok(D.daily.hrMin[f0] === 50 && D.daily.hrAvg[f0] === 71.4 && D.daily.hrMax[f0] === 140, 'the day’s heart-rate range continues on the Fitbit (low, average, high)');
+ok(D.daily.active[f0] === 480.6 && D.daily.active[b0] != null, 'active energy continues across the switch');
+ok(D.daily.irregular[f0 + 12] === 1 && D.daily.irregular.filter(v => v != null).length === 1, 'an AFib notification from the band is counted on its day');
 const fw = D.workouts.filter(w => w.src === 'Fitbit');
 ok(fw.length === 10 && fw[0].type === 'Running' && fw[0].min === 40 && fw[0].km === 6.54 && fw[0].d.endsWith('T18:30'), 'Fitbit workouts, in local time: ' + JSON.stringify(fw[0]));
 ok(D.workouts.length > fw.length, 'Apple Watch workouts are kept');
