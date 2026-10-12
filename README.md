@@ -96,7 +96,7 @@ What it adds, only for datasets that have it (nobody else sees these, not even a
 - **HRV (Fitbit)**: Fitbit's own HRV, RMSSD during sleep. It is never written into the Apple HRV series (SDNN): different measures.
 - **HRV against your normal**: each night's HRV as a percentage above or below the median of the 60 nights before it, on the same device only, from 14 nights in. The one HRV line that runs across a change of device.
 - **Skin temperature** (against Google's baseline), **blood oxygen**, **Active Zone Minutes**, Fitbit workouts, sleep stages (Fitbit's light sleep is shown as core).
-- **Air and weather where you live**: night-time PM2.5, the day's worst hour on the US AQI, outdoor temperatures. City-scale model estimates, not room sensors.
+- **Air and weather where you live**: PM2.5 and outdoor temperature over the hours you slept (from the band's sleep times), the day's worst hour on the US AQI, the day's high. City-scale model estimates, not room sensors.
 
 Rules: the Fitbit era starts on the first day the band recorded its own readings (Google's VO₂ max estimate is labelled Fitbit even before, so it does not count, and is kept weekly or when it changes). Google's copies of Apple Health data (`HEALTH_KIT`) are ignored. On days both have, the vault wins.
 

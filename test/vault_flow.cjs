@@ -50,9 +50,9 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
   ok((await cardTitles(p)).some(x => /Active Zone Minutes/.test(x)), 'Activity: Active Zone Minutes');
   await ch(p, 'Environment & Hearing');
   txt = await p.textContent('.stack');
-  ok(/Air and weather where you live/.test(txt) && (await cardTitles(p)).some(x => /Air at night/.test(x)), 'Environment: air and weather section');
+  ok(/Air and weather where you live/.test(txt) && (await cardTitles(p)).some(x => /Air while you slept/.test(x)), 'Environment: air and weather section');
   await p.click('#views button:text-is("All")'); await p.waitForTimeout(300);
-  ok(!/Not recorded in this period:[^.]*(Air at night|Outdoor)/.test(await p.textContent('.stack')), 'All time: air not listed as missing for the years before the vault');
+  ok(!/Not recorded in this period:[^.]*(Air while you slept|Outdoor)/.test(await p.textContent('.stack')), 'All time: air not listed as missing for the years before the vault');
   await ch(p, 'Sleep'); await ch(p, 'Workouts'); await ch(p, 'Heart'); await ch(p, 'Overview');
   ok(await p.$$eval('.brow .bname span', x => x.some(e => /HRV \(Fitbit\)/.test(e.textContent))), 'Overview board lists the Fitbit HRV');
 
@@ -82,7 +82,7 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
   await q.setInputFiles('#file', f('watch.zip')); await q.waitForSelector('#app:not([hidden]) .ch-head', { timeout: 60000 });
   for (const c of ['Stress & Recovery', 'Activity', 'Environment & Hearing']) {
     await ch(q, c); const all = await q.textContent('.stack');
-    ok(!/HRV \(Fitbit\)|HRV against your normal|Skin temperature|Blood oxygen|Active Zone Minutes|Air at night|Outdoor/.test(all), `${c}: nothing from a vault, not even as missing`);
+    ok(!/HRV \(Fitbit\)|HRV against your normal|Skin temperature|Blood oxygen|Active Zone Minutes|Air while you slept|Outdoor/.test(all), `${c}: nothing from a vault, not even as missing`);
   }
 
   // 7. the sample with a vault
