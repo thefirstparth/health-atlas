@@ -16,9 +16,10 @@ The site runs entirely in your browser. You choose your `export.zip`, the page r
 | `src/parser.js` | Streaming unzip (native `DecompressionStream`) and a hand-written XML tokenizer. Never resolves DTD entities. Keeps about 30 MB in memory for an 800 MB `export.xml` |
 | `src/validate.js` | Structural check for stored data and imported `.json` copies |
 | `src/dashboard.js` | The dashboard (overview rules, charts, scrubbing, tapestry, calendars, records, poster) |
+| `src/vault.js` | Opens a health vault: reads the repo zip or `.vault` files, decrypts them, lays the wearable's days after the Apple export |
 | `src/compare.js` | Compare mode: two or three people on one timeline, built from the dashboard's own chart helpers |
 | `src/icons.js` | The chapter line icons, shared by the dashboard and the home page |
-| `src/sample.js` | Sample data for the demo (`?demo`), the compare demo (`?demo=compare`), the device-switch demo (`?demo=switch`) and the home page. Made up, never stored |
+| `src/sample.js` | Sample data for the demo (`?demo`), the compare demo (`?demo=compare`), the device-switch demo (`?demo=switch`), the health vault demo (`?demo=vault`) and the home page. Made up, never stored |
 | `src/landing.js` | Home page: the sleep recorder figure, the zoom-out story, chapters and the live demo |
 | `assets/fonts/` | Figtree (text), Newsreader (headlines) and IBM Plex Mono (labels), self-hosted under the OFL |
 | `vercel.json` | Security headers (CSP and others) for every path |
@@ -84,6 +85,21 @@ Moving from an Apple Watch to another wearable that writes to Apple Health (for 
 
 A sample switch is at `?demo=switch`. The full plan, including keeping HRV continuous from a Fitbit export, is in `docs/plans/device-switch.md`.
 
+## Health vault
+
+A health vault is a private GitHub repo that a GitHub Action fills twice a day from the Google Health API (a Fitbit, or any device Google Health reads), with the weather and air around each day, all encrypted with a passphrase. It can also hold a frozen Health Atlas copy of an Apple Health export (`apple-watch.vault`), so the Apple Watch years and the new wearable sit on one timeline.
+
+Open it with **Keep a health vault? Open it** on the home page, or **Open your health vault** in Settings: choose the repo's zip (GitHub: *Code → Download ZIP*) or its `.vault` files and type the passphrase. Decryption happens in the worker, on this device; the passphrase is not kept. Without an `apple-watch.vault`, the vault's days are added to what the browser already holds. Open it again for newer days. A sample is at `?demo=vault`.
+
+What it adds, only for datasets that have it (nobody else sees these, not even as "not recorded"):
+
+- **HRV (Fitbit)**: Fitbit's own HRV, RMSSD during sleep. It is never written into the Apple HRV series (SDNN): different measures.
+- **HRV against your normal**: each night's HRV as a percentage above or below the median of the 60 nights before it, on the same device only, from 14 nights in. The one HRV line that runs across a change of device.
+- **Skin temperature** (against Google's baseline), **blood oxygen**, **Active Zone Minutes**, Fitbit workouts, sleep stages (Fitbit's light sleep is shown as core).
+- **Air and weather where you live**: night-time PM2.5, the day's worst hour on the US AQI, outdoor temperatures. City-scale model estimates, not room sensors.
+
+Rules: the Fitbit era starts on the first day the band recorded its own readings (Google's VO₂ max estimate is labelled Fitbit even before, so it does not count, and is kept weekly or when it changes). Google's copies of Apple Health data (`HEALTH_KIT`) are ignored. On days both have, the vault wins.
+
 ## Dashboard 1.1
 
 Small changes that make the charts easier to read, with the design system unchanged:
@@ -122,6 +138,9 @@ node test/demo_flow.cjs                                 # sample data is never s
 node test/compare_flow.cjs test/fixtures                # compare: naming, reading, reload, rename, bad and duplicate files, end
 node test/trim_timeline.mjs                             # impossible dates (1939, after the export, stray clusters) are left out
 node test/device_switch.cjs test/fixtures               # Apple Watch -> Fitbit in one export: eras, sleep and energy kept, switch drawn
+node test/make_vault.mjs test/fixtures                  # a made-up health vault (repo zip, passphrase "correct horse battery staple")
+node test/vault_import.mjs test/fixtures                # opening it without a browser: every rule above
+node test/vault_flow.cjs test/fixtures                  # opening it through the UI: wrong passphrase, chapters, Settings, reload, people without one
 COMPARE=1 node test/layout_audit_app.cjs /tmp/d.json    # the layout audit, walking compare mode (sample people)
 ```
 

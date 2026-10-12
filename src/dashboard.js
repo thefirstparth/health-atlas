@@ -1,5 +1,6 @@
 import { ICON, iconSvg } from './icons.js';
 import { compareKit } from './compare.js';
+import { VAULT_KEYS } from './vault.js';
 // Health Atlas dashboard. Forked from the personal single-file dashboard; this file is now the source.
 // mountDashboard(data, { units: 'metric'|'imperial', targets }) renders into the page chrome in index.html.
 export const DEFAULT_TARGETS = { sleep: 420, sleepFloor: 360, steps: 8000, exercise: 30, daylight: 30 };
@@ -10,6 +11,9 @@ export function prepareData(D, OPT = {}) {
   const C = structuredClone(D), mul = (a, f) => a && a.forEach((v, i) => { if (v != null) a[i] = v * f; });
   const dk = { distance: MI, cycling: MI, walkSpeed: MI, runSpeed: MI, stepLen: 1 / 2.54, runVo: 1 / 2.54, runStride: FT, stairUp: FT, stairDown: FT };
   for (const k in dk) mul(C.daily[k], dk[k]);
+  // a health vault's temperatures: outdoor °C → °F, and the skin's change from baseline in °F
+  for (const k of ['tMax', 'nightT']) if (C.daily[k]) C.daily[k] = C.daily[k].map(v => v == null ? null : v * 1.8 + 32);
+  mul(C.daily.skinTemp, 1.8);
   const pk = { weight: LB, height: 1 / 2.54, sixMin: FT };
   for (const k in pk) if (C.points[k]) C.points[k] = C.points[k].map(([d, v]) => [d, v * pk[k]]);
   C.workouts = C.workouts.map(w => w.km ? { ...w, km: w.km * MI } : w);
@@ -57,7 +61,9 @@ const tw = (t, font) => { MC.font = font; return MC.measureText(t).width; };
 // when it changes, so trends never smooth across a switch and comparisons stay within one device.
 // Measures the iPhone (or a scale, a cuff) records carry straight on.
 const PHONE_KEYS = new Set(['walkSpeed', 'stepLen', 'doubleSupport', 'asymmetry', 'stairUp', 'stairDown', 'steadiness', 'sixMin', 'phoneDb', 'weight', 'height', 'bpSys', 'bpDia']);
-const devDep = k => !PHONE_KEYS.has(k);
+// measured around you, or made comparable across devices on purpose (HRV against your own normal)
+const CROSS_KEYS = new Set(['pm25Night', 'pm25', 'aqiMax', 'tMax', 'nightT', 'hrvRel']);
+const devDep = k => !PHONE_KEYS.has(k) && !CROSS_KEYS.has(k);
 
 // ---------------- window statistics, one set per dataset (all datasets share the same day index)
 function makeStats(Dx) {
@@ -132,6 +138,8 @@ const WTYPES = [...TOPW.map((t, k) => [t, '--w-' + (k + 1)]), ['Other', '--w-4']
 const wgroup = t => TOPW.includes(t) ? t : 'Other';
 
 // ---------------- formatting
+// a sign for signed measures, judged on the value as shown (so 0.04 shown as 0.0 gets no sign)
+const sgn = (v, d = 0) => { const x = +(+v).toFixed(d); return x > 0 ? '+' : x < 0 ? '−' : ''; };
 const nf = (v, d = 0) => v == null ? '–' : v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtDur = m => { if (m == null) return '–'; m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? `${h} hr ${r} min` : `${r} min`; };
 const fmtDurS = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? `${h}h ${String(r).padStart(2, '0')}m` : `${r} min`; };
@@ -182,6 +190,15 @@ const U = {
   lb: { f: v => [nf(v, 1), 'lb'], c: v => nf(v, 1), t: v => nf(v), d: 'abs', dp: 1, du: 'lb' },
   dur: { f: v => [fmtDur(v), ''], c: fmtDurC, t: v => nf(v / 60, 1) + 'h', d: 'dur', ax: v => v === 0 ? '0' : v < 60 ? nf(v) + 'm' : v % 60 === 0 ? (v / 60) + 'h' : fmtDurC(v) },
   clock: { f: v => [fmtClock(v), ''], c: fmtClockC, d: 'clock', ax: fmtClockAxis },
+  // a health vault's measures
+  pctv: { f: v => [nf(v, 1), '%'], c: v => nf(v, 1), t: v => nf(v), d: 'abs', dp: 1, du: 'pts' },
+  rel: { f: v => [sgn(v) + nf(Math.abs(v)), '%'], c: v => sgn(v) + nf(Math.abs(v)), d: 'abs', dp: 0, du: 'pts' },
+  dc: { f: v => [sgn(v, 1) + nf(Math.abs(v), 1), '°C'], c: v => sgn(v, 1) + nf(Math.abs(v), 1), t: v => sgn(v, 1) + nf(Math.abs(v), 1), d: 'abs', dp: 1, du: '°C' },
+  df: { f: v => [sgn(v, 1) + nf(Math.abs(v), 1), '°F'], c: v => sgn(v, 1) + nf(Math.abs(v), 1), t: v => sgn(v, 1) + nf(Math.abs(v), 1), d: 'abs', dp: 1, du: '°F' },
+  tc: { f: v => [nf(v, 1), '°C'], c: v => nf(v, 1), t: v => nf(v), d: 'abs', dp: 1, du: '°C' },
+  tf: { f: v => [nf(v), '°F'], c: v => nf(v), d: 'abs', dp: 0, du: '°F' },
+  ugm3: { f: v => [nf(v), 'µg/m³'], c: v => nf(v), d: 'abs', dp: 0, du: 'µg/m³' },
+  aqi: { f: v => [nf(v), 'AQI'], c: v => nf(v), d: 'abs', dp: 0, du: '' },
 };
 const F1 = (u, v) => U[u].f(v);
 const fmt = (u, v) => { const [a, b] = F1(u, v); return b ? `${a} ${b}` : a; };
@@ -224,6 +241,16 @@ const DEF = {
   sl_deep: { t: 'Deep sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-deep', ex: 'The most physically restorative stage. Usually 10 to 25% of the night; it declines naturally with age.' },
   sl_rem: { t: 'REM sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-rem', ex: 'The stage linked with memory and dreaming. Usually 20 to 25% of the night.' },
   sl_mid: { t: 'Midpoint of sleep', u: 'clock', k: 'line', dir: 0, night: true, ex: 'Halfway between falling asleep and waking up.' },
+  // only from a health vault (src/vault.js); hidden for everyone else
+  hrvRmssd: { t: 'HRV (Fitbit)', u: 'ms', k: 'line', dir: 1, ex: 'Heart rate variability as Fitbit measures it during sleep (RMSSD). Apple Watch uses a different measure (SDNN), so the two never share a line: HRV against your normal puts both on one scale.' },
+  hrvRel: { t: 'HRV against your normal', u: 'rel', k: 'line', dir: 1, ex: 'Each night’s HRV above or below the median of your previous 60 nights on the same device. Apple Watch and Fitbit read differently, but the change from your own normal can be followed across both. Starts after 14 nights on a device.' },
+  skinTemp: { t: 'Skin temperature', u: 'dc', k: 'line', dir: 0, ex: 'Night-time skin temperature against your own baseline, from the Fitbit. A rise that lasts a few nights can come with illness, a warm room or a late meal.' },
+  spo2: { t: 'Blood oxygen', u: 'pctv', k: 'line', dir: 0, ex: 'Average oxygen saturation while you sleep. 95 to 100% is typical; a steady number is normal.' },
+  azm: { t: 'Active Zone Minutes', u: 'min', k: 'bar', dir: 1, ex: 'Fitbit’s minutes in its fat-burn, cardio and peak heart-rate zones.' },
+  pm25Night: { t: 'Air at night (PM2.5)', u: 'ugm3', k: 'line', dir: -1, color: '--c-env', ex: 'Fine particles in the outdoor air from 22:00 to 06:00 where you live, from a city-scale air model (about 45 km), not a sensor in your room. The WHO guideline is 15 µg/m³ as a daily average.' },
+  aqiMax: { t: 'Air quality, worst hour', u: 'aqi', k: 'line', dir: -1, color: '--c-env', ex: 'The day’s worst hour on the US Air Quality Index, outdoors where you live. Up to 50 is good; over 100 is unhealthy for sensitive groups.' },
+  tMax: { t: 'Outdoor high', u: 'tc', k: 'line', dir: 0, color: '--c-env', ex: 'The day’s highest outdoor temperature where you live.' },
+  nightT: { t: 'Outdoor temperature at night', u: 'tc', k: 'line', dir: 0, color: '--c-env', ex: 'Average outdoor temperature from 22:00 to 06:00 where you live. Warm nights can make sleep lighter.' },
   vo2max: { t: 'Cardio fitness (VO₂ max)', u: 'vo2', k: 'points', dir: 1, ex: 'Estimated maximum oxygen your body can use during exercise. Higher means better aerobic fitness.' },
   hrRecovery: { t: 'Heart rate recovery', u: 'bpm', k: 'points', dir: 1, ex: 'How far heart rate drops in the first minute after a workout ends. A bigger drop is better.' },
   steadiness: { t: 'Walking steadiness', u: 'pct0', k: 'points', dir: 1, ex: 'Apple’s estimate of how stable your walking is. Higher means lower risk of a fall.' },
@@ -232,28 +259,32 @@ const DEF = {
   effortEst: { t: 'Workout effort', u: 'num', k: 'points', dir: 0, ex: 'Apple’s 1 to 10 estimate of how hard each workout was.' },
 };
 for (const k in DEF) DEF[k].key = k;
-const IMPU = { km: 'mi', kmh: 'mph', cm: 'in1', cm1: 'in1', m: 'ft', m2: 'ft2', mps: 'ftps', kg: 'lb' };
+const IMPU = { km: 'mi', kmh: 'mph', cm: 'in1', cm1: 'in1', m: 'ft', m2: 'ft2', mps: 'ftps', kg: 'lb', tc: 'tf', dc: 'df' };
 if (IMP) for (const k in DEF) DEF[k].u = IMPU[DEF[k].u] || DEF[k].u;
 const DU = IMP ? 'mi' : 'km', HU = IMP ? 'in1' : 'cm', WU = IMP ? 'lb' : 'kg';
 const DIRTXT = { 1: 'Higher is better', '-1': 'Lower is better', 0: '' };
-const SPECIAL_DIR = { resp: 'Steady is normal', sl_mid: 'Regular is better', basal: 'Set by body size', sl_deep: 'No single target', sl_rem: 'No single target' };
+const SPECIAL_DIR = { spo2: 'Steady is normal', skinTemp: 'Close to 0 is usual', tMax: 'Where you live', nightT: 'Where you live', resp: 'Steady is normal', sl_mid: 'Regular is better', basal: 'Set by body size', sl_deep: 'No single target', sl_rem: 'No single target' };
 const dirText = def => def.key in SPECIAL_DIR ? SPECIAL_DIR[def.key] : (DIRTXT[def.dir] || '');
 
 // ---------------- chapters
+// a vault's measures (VAULT_KEYS) appear only for a dataset that has them, so nobody else sees them listed as missing
+const HAS = k => [D, ...(PEOPLE || []).map(P => P.D)].some(x => (x.daily[k] || []).some(v => v != null));
+const vk = list => list.filter(c => typeof c !== 'string' || !VAULT_KEYS.includes(c) || HAS(c));
+const AIR = HAS('pm25Night') || HAS('tMax');
 const CH = [
   { id: 'overview', name: 'Overview', color: '--c-overview' },
   { id: 'heart', name: 'Heart', color: '--c-heart', desc: 'Heart rate through the day, at rest and while walking, with cardio fitness and recovery readings.',
     cards: [{ range: true }, 'rhr', 'walkHr', 'vo2max', 'hrRecovery', 'highHr'] },
   { id: 'stress', name: 'Stress & Recovery', color: '--c-stress', desc: 'The signals that reflect how rested your body is: heart rate variability, resting heart rate and breathing during sleep.',
-    cards: ['hrv', 'rhr', 'resp', 'mindful'] },
+    cards: vk(['hrv', 'hrvRmssd', 'hrvRel', 'rhr', 'resp', 'skinTemp', 'spo2', 'mindful']) },
   { id: 'sleep', name: 'Sleep', color: '--c-sleep', desc: 'How long you slept, how that sleep was made up, and when it happened. Each night is dated by the morning you woke up.', custom: 'sleep' },
   { id: 'activity', name: 'Activity', color: '--c-activity', desc: 'Rings, steps, energy and distance.', custom: 'activity',
-    cards: ['steps', 'active', 'exercise', 'stand', 'distance', 'flights', 'basal', 'cycling'] },
+    cards: vk(['steps', 'active', 'exercise', 'azm', 'stand', 'distance', 'flights', 'basal', 'cycling']) },
   { id: 'workouts', name: 'Workouts', color: '--c-workouts', desc: 'Every recorded workout, by sport.', custom: 'workouts' },
   { id: 'mobility', name: 'Mobility', color: '--c-mobility', desc: 'How you walk, climb stairs and run, measured in the background by iPhone and Apple Watch.',
     cards: ['walkSpeed', 'stepLen', 'doubleSupport', 'asymmetry', 'steadiness', 'sixMin', 'stairUp', 'stairDown', { sec: 'Running form' }, 'runSpeed', 'runPower', 'runGct', 'runVo', 'runStride'] },
-  { id: 'env', name: 'Environment & Hearing', color: '--c-env', desc: 'The sound around you, headphone volume and time spent in daylight.',
-    cards: ['daylight', 'envDb', 'phoneDb', 'envEvent'] },
+  { id: 'env', name: 'Environment & Hearing', color: '--c-env', desc: 'The sound around you, headphone volume and time spent in daylight' + (AIR ? ', and the air and weather where you live.' : '.'),
+    cards: vk(['daylight', 'envDb', 'phoneDb', 'envEvent', ...(AIR ? [{ sec: 'Air and weather where you live' }] : []), 'pm25Night', 'aqiMax', 'nightT', 'tMax']) },
   { id: 'body', name: 'Body', color: '--c-body', desc: 'Weight, height and blood pressure, as logged.', custom: 'body' },
 ];
 const CHMAP = Object.fromEntries(CH.map(c => [c.id, c]));
@@ -387,7 +418,8 @@ function yDom(vals, zero, ticks = 3) {
   vals = vals.filter(v => v != null && isFinite(v));
   let lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1;
   if (zero) lo = Math.min(0, lo);
-  if (hi === lo) { hi += Math.abs(hi) * .1 || 1; if (!zero) lo -= Math.abs(lo) * .1 || 1; }
+  // flat data (a trend through identical readings differs only by rounding) gets a real range, so ticks never repeat
+  if (hi - lo <= Math.max(1e-9, Math.abs(hi) * 1e-6)) { hi = Math.max(hi, lo); hi += Math.abs(hi) * .1 || 1; if (!zero) lo -= Math.abs(lo) * .1 || 1; }
   const pad = zero ? 0 : (hi - lo) * .15;
   const st = niceStep((hi - lo) + 2 * pad, ticks);
   const a = zero ? 0 : Math.floor((lo - pad) / st) * st, b = Math.ceil((hi + (zero ? hi * .04 : pad)) / st) * st;
@@ -890,10 +922,13 @@ function rangeBand(view, p, chColor) {
   return B.c;
 }
 
+const FIRST = {};
+const firstDay = k => k in FIRST ? FIRST[k] : (FIRST[k] = (D.daily[k] || []).findIndex(v => v != null) === -1 ? Infinity : (D.daily[k] || []).findIndex(v => v != null));
 function renderBands(root, list, view, p, chColor) {
   const missing = []; let pendingSec = null;
   for (const item of list) {
     if (item && item.sec) { pendingSec = item.sec; continue; }
+    if (typeof item === 'string' && VAULT_KEYS.includes(item) && p.b < firstDay(item)) continue;
     const r = item && item.range ? rangeBand(view, p, chColor) : metricBand(item, view, p, chColor);
     if (!r) continue;
     if (r.missing) { missing.push(r); continue; }
@@ -1492,7 +1527,7 @@ function recordsCard(root) {
 }
 
 // ---------------- Chapter vital signs: last 30 days, with the last 90 days as a small trend
-const VITALS = { heart: ['rhr', 'walkHr', 'vo2max'], stress: ['hrv', 'rhr', 'resp'], sleep: ['sl_asleep', 'sl_mid', 'sl_deep'], activity: ['steps', 'active', 'exercise'], workouts: ['_workouts'], mobility: ['walkSpeed', 'stepLen', 'steadiness'], env: ['daylight', 'envDb', 'phoneDb'], body: ['weight'] };
+const VITALS = { heart: ['rhr', 'walkHr', 'vo2max'], stress: [HAS('hrvRmssd') ? 'hrvRmssd' : 'hrv', 'rhr', 'resp'], sleep: ['sl_asleep', 'sl_mid', 'sl_deep'], activity: ['steps', 'active', 'exercise'], workouts: ['_workouts'], mobility: ['walkSpeed', 'stepLen', 'steadiness'], env: ['daylight', 'envDb', 'phoneDb'], body: ['weight'] };
 function vitalsRow(chId, e, color) {
   const keys = (VITALS[chId] || []).filter(k => k === '_workouts' ? WK.length : k in DEF && ((DEF[k].k === 'points' ? (PTS[k] || []).length : win(k, 0, LAST).n)));
   if (!keys.length) return null;
@@ -1576,10 +1611,10 @@ const BOARD = [
   ['activity', ['steps', 'active', 'exercise', 'distance']],
   ['workouts', ['_workouts']],
   ['heart', ['rhr', 'walkHr', 'vo2max']],
-  ['stress', ['hrv', 'resp']],
+  ['stress', ['hrv', 'hrvRmssd', 'resp', 'skinTemp']],
   ['sleep', ['sl_asleep', 'sl_mid', 'sl_deep']],
   ['mobility', ['walkSpeed', 'stepLen']],
-  ['env', ['daylight', 'envDb']],
+  ['env', ['daylight', 'envDb', 'pm25Night']],
 ];
 const WDEF = { key: '_workouts', t: 'Workout time', u: 'dur', dir: 1 };
 function boardSeries(def) {
@@ -1592,7 +1627,7 @@ const WWDEF = { key: '_workouts', t: 'Workout time', u: 'dur', dir: 1 };
 const BEDDEF = { key: 'sl_bed', t: 'Bedtime', u: 'clock', k: 'line', dir: 0, night: true };
 const WAKEDEF = { key: 'sl_wake', t: 'Wake-up', u: 'clock', k: 'line', dir: 0, night: true };
 const PULSE = [['steps', 'activity'], ['exercise', 'activity'], ['active', 'activity'], ['_workouts', 'workouts'], ['sl_asleep', 'sleep'], ['sl_bed', 'sleep'], ['sl_wake', 'sleep'],
-  ['rhr', 'heart'], ['walkHr', 'heart'], ['hrv', 'stress'], ['resp', 'stress'], ['daylight', 'env'], ['walkSpeed', 'mobility']];
+  ['rhr', 'heart'], ['walkHr', 'heart'], ['hrv', 'stress'], ['hrvRmssd', 'stress'], ['resp', 'stress'], ['daylight', 'env'], ['walkSpeed', 'mobility']];
 const pdef = k => k === '_workouts' ? WWDEF : k === 'sl_bed' ? BEDDEF : k === 'sl_wake' ? WAKEDEF : DEF[k];
 const PNAME = { rhr: 'Resting HR', walkHr: 'Walking HR', sl_asleep: 'Sleep', _workouts: 'Workouts', walkSpeed: 'Walking speed', hrv: 'HRV', resp: 'Breathing rate', active: 'Active energy', exercise: 'Exercise', daylight: 'Daylight' };
 const pname = k => PNAME[k] || pdef(k).t;
@@ -2082,7 +2117,9 @@ function render() {
     if ((view === 'Y' || view === 'All') && CAL[ch.id] && win(CAL[ch.id], p.a, p.b).n) { const cc = calendarCard(CAL[ch.id], view, p, ch.color); if (cc) stack.appendChild(cc); }
     // a measure that stopped at a change of device is said plainly, with the date
     const stop = new Map(), rest = [];
-    for (const m of missing) { const st = m.key != null ? stoppedAt(m.key) : null; if (st && p.a >= st.s - 60) { if (!stop.has(st.s)) stop.set(st.s, []); stop.get(st.s).push(m.missing + (st.n ? ` (only ${st.n} day${st.n === 1 ? '' : 's'} since)` : '')); } else rest.push(m.missing || m); }
+    for (const m of missing) { const st = m.key != null ? stoppedAt(m.key) : null;
+      if (st && m.key === 'hrv' && HAS('hrvRmssd')) { stack.appendChild(el('div', 'missing', `Heart rate variability from the ${ERAS[era(st.s) - 1] ? ERAS[era(st.s) - 1].name : 'previous device'} ends at the switch on ${dShort(st.s)}, ${dYr(st.s)}. ${ERAS[era(st.s)].name} measures it differently, so it has its own card above; HRV against your normal follows both.`)); continue; }
+      if (st && p.a >= st.s - 60) { if (!stop.has(st.s)) stop.set(st.s, []); stop.get(st.s).push(m.missing + (st.n ? ` (only ${st.n} day${st.n === 1 ? '' : 's'} since)` : '')); } else rest.push(m.missing || m); }
     for (const [s, names] of stop) stack.appendChild(el('div', 'missing', `Not recorded since you switched to ${ERAS[era(s)].name} on ${dShort(s)}, ${dYr(s)}: ${names.join(', ')}. ${ERAS[era(s) - 1] ? ERAS[era(s) - 1].name : 'The previous device'} recorded ${names.length > 1 ? 'these' : 'this'}; ${ERAS[era(s)].name} does not send ${names.length > 1 ? 'them' : 'it'} to Apple Health.`));
     if (rest.length) stack.appendChild(el('div', 'missing', 'Not recorded in this period: ' + rest.join(', ') + '.'));
     if (!stack.children.length) stack.appendChild(el('div', 'missing', 'Nothing recorded in this period.'));
@@ -2130,7 +2167,8 @@ const CMP = PEOPLE ? compareKit({ PEOPLE, S, LAST, DEF, U, VC, CHMAP, el, sv, cs
   font: () => SANS, setActive: (v, only) => { if (only && ACTIVE !== only) return; ACTIVE = v; } }) : null;
 if (CMP) S.ref = CMP.commonEnd();
 document.getElementById('brandSub').textContent = `${MON[dt(0).getUTCMonth()]} ${dYr(0)} – ${dShort(LAST)}, ${dYr(LAST)}`;
-document.getElementById('genline').textContent = PEOPLE ? `Comparing ${PEOPLE.map(P => `${P.name} (export dated ${(P.D.meta.exportDate || P.D.meta.end).slice(0, 10)})`).join(', ')}.` : `Built from the Apple Health export dated ${(m.exportDate || '').slice(0, 10)}. Sources: ${Object.keys(m.sources).join(', ')}.`;
+document.getElementById('genline').textContent = PEOPLE ? `Comparing ${PEOPLE.map(P => `${P.name} (export dated ${(P.D.meta.exportDate || P.D.meta.end).slice(0, 10)})`).join(', ')}.` : m.vault ? `Built from ${m.vault.appleExport ? `the Apple Health export dated ${m.vault.appleExport.slice(0, 10)} and ` : ''}a health vault with days up to ${m.vault.through}. Sources: ${Object.keys(m.sources || {}).join(', ')}.`
+  : `Built from the Apple Health export dated ${(m.exportDate || m.end || '').slice(0, 10)}. Sources: ${Object.keys(m.sources || {}).join(', ')}.`;
 document.getElementById('tgtli').textContent = `Sleep ${hTxt(TG.sleep)} a night (floor ${hTxt(TG.sleepFloor)}), steps ${nf(TG.steps)}, exercise ${TG.exercise} minutes, daylight ${TG.daylight} minutes, sleep timing within an hour of your usual midpoint (the median of the previous 90 nights). "Needs attention" is the target you missed on the most days in the last 14. A chain counts days on target in a row; one missed day in any 7 is forgiven as a rest day, and days with no data neither count nor break it unless 4 or more in a row.`;
 render();
 return { renderPoster, posterYears, compare: !!PEOPLE, destroy() { AC.abort(); MO.disconnect(); hideTip(); document.getElementById('main').replaceChildren(); }, go };

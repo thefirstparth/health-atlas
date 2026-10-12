@@ -4,8 +4,11 @@
 // offsets, noWatch (iPhone only: no heart, sleep, rings or workouts), gap: [from, to] day indexes with no data,
 // switchDays: the last that many days come from a Fitbit through Google Health (as after a switch: no HRV,
 // rings, daylight or noise; resting heart rate and sleep read a little differently).
+// vault (with switchDays): the person also keeps a health vault, so the Fitbit's own HRV, skin temperature,
+// blood oxygen and Active Zone Minutes are there, with the air and weather of the last 92 days.
+import { hrvAgainstNormal } from './vault.js';
 export function sampleData(endISO, opts = {}) {
-  const O = { seed: 0, days: 1461, endShift: 0, steps: 0, sleep: 0, bed: 0, noWatch: false, gap: null, switchDays: 0, ...opts };
+  const O = { seed: 0, days: 1461, endShift: 0, steps: 0, sleep: 0, bed: 0, noWatch: false, gap: null, switchDays: 0, vault: false, ...opts };
   const DAY = 864e5;
   const end = (endISO ? Date.parse(endISO + 'T00:00:00Z') : Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())) - O.endShift * DAY;
   const N = O.days, start = end - (N - 1) * DAY;
@@ -16,7 +19,8 @@ export function sampleData(endISO, opts = {}) {
   const round = (v, d = 1) => v == null ? null : Math.round(v * 10 ** d) / 10 ** d;
   const keys = ['steps', 'distance', 'flights', 'active', 'moveGoal', 'exercise', 'exerciseGoal', 'stand', 'standGoal', 'basal', 'daylight', 'standMin',
     'rhr', 'walkHr', 'hrv', 'resp', 'hrMin', 'hrMax', 'hrAvg', 'walkSpeed', 'stepLen', 'doubleSupport', 'asymmetry', 'stairUp', 'stairDown', 'envDb', 'phoneDb', 'envEvent', 'mindful',
-    'sl_asleep', 'sl_awake', 'sl_core', 'sl_deep', 'sl_rem', 'sl_unspec', 'sl_bed', 'sl_wake', 'sl_mid', 'sl_sessions'];
+    'sl_asleep', 'sl_awake', 'sl_core', 'sl_deep', 'sl_rem', 'sl_unspec', 'sl_bed', 'sl_wake', 'sl_mid', 'sl_sessions',
+    'hrvRmssd', 'skinTemp', 'spo2', 'azm', 'pm25Night', 'pm25', 'aqiMax', 'tMax', 'nightT'];
   const daily = Object.fromEntries(keys.map(k => [k, new Array(N).fill(null)]));
   const workouts = [], points = { vo2max: [], weight: [], hrRecovery: [], height: [] };
   const TYPES = [['Running', 36, 5.6, 152], ['Strength training', 46, 0, 118], ['Cycling', 52, 18.5, 136], ['Yoga', 32, 0, 96], ['Walking', 48, 4.1, 108]];
@@ -71,6 +75,21 @@ export function sampleData(endISO, opts = {}) {
       daily.sl_asleep[i] = round(asleep, 1); daily.sl_awake[i] = round(awake, 1); daily.sl_deep[i] = round(deep, 1); daily.sl_rem[i] = round(rem, 1);
       daily.sl_core[i] = round(asleep - deep - rem, 1); daily.sl_unspec[i] = 0; daily.sl_bed[i] = round(bed, 1); daily.sl_wake[i] = round(wake, 1);
       daily.sl_mid[i] = round((bed + wake) / 2, 1); daily.sl_sessions[i] = 1;
+      if (fb && O.vault) {
+        daily.hrvRmssd[i] = round(36 + fit * 4 + gauss(i, 60) * 6 - (h(i, 44) < .06 ? 8 : 0), 1);
+        daily.spo2[i] = round(96.1 + gauss(i, 61) * .6, 1);
+        // a few warm nights in a row, as with a cold
+        const ill = i >= N - 24 && i < N - 20;
+        if (i >= N - O.switchDays + 3) daily.skinTemp[i] = round(gauss(i, 62) * .18 + (ill ? .7 : 0), 2);
+      }
+    }
+    if (fb && O.vault && !off) daily.azm[i] = Math.max(0, Math.round(22 + gauss(i, 63) * 14 + (weekend ? 10 : 0)));
+    // the city's air and weather (a vault keeps the last 92 days); smoky weeks come and go
+    if (O.vault && i >= N - 92) {
+      const smoke = 18 * Math.max(0, Math.sin((i - N) / 9)) ** 2;
+      daily.pm25Night[i] = round(16 + smoke + h(i, 64) * 9, 1); daily.pm25[i] = round(daily.pm25Night[i] * .85 + h(i, 65) * 4, 1);
+      daily.aqiMax[i] = Math.round(62 + daily.pm25Night[i] * 1.4 + h(i, 66) * 12);
+      daily.tMax[i] = round(28.5 + season * 1.5 + gauss(i, 67) * 1.1, 1); daily.nightT[i] = round(20.5 + season + gauss(i, 68) * .8, 1);
     }
     // occasional readings
     if (i % 9 === 3 && !off && !O.noWatch) points.vo2max.push([`${iso(t)}T18:40`, round(42.2 + fit * 3.6 + gauss(i, 49) * .5, 2)]);
@@ -78,6 +97,7 @@ export function sampleData(endISO, opts = {}) {
     if (!O.noWatch && !fb && wmin && whr > 130 && h(i, 51) < .5) points.hrRecovery.push([`${iso(t)}T19:30`, round(24 + fit * 4 + gauss(i, 52) * 3, 2)]);
   }
   points.height.push([`${iso(start)}T09:00`, 176]);
+  if (O.vault && O.switchDays > 0) { const rel = hrvAgainstNormal(daily, iso(start), iso(start + (N - O.switchDays) * DAY)); if (rel.some(v => v != null)) daily.hrvRel = rel; }
   const clean = {}; for (const k in daily) if (daily[k].some(v => v != null)) clean[k] = daily[k];
   return {
     meta: { ...(O.switchDays > 0 ? { devices: [{ name: 'Apple Watch', from: iso(start), to: iso(start + (N - O.switchDays - 1) * DAY) }, { name: 'Fitbit', from: iso(start + (N - O.switchDays) * DAY), to: iso(end) }] } : {}), generated: 'sample', exportDate: iso(end) + ' 08:00:00 +0000', start: iso(start), end: iso(end), days: N, sources: O.noWatch ? { iPhone: 1 } : { 'Apple Watch': 1, iPhone: 1 }, sleepGoal: [], sleepSource: O.noWatch ? null : 'watch', unitsHint: 'metric', sample: true },

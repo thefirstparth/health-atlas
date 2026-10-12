@@ -58,6 +58,12 @@ layout audit must all pass.
 
 ## Phase 2: keeping HRV (and anything else Apple Health won't get) continuous
 
+**Built, through the health vault rather than a Takeout import** (October 2026): the Google Health API
+turned out to be open to a personal Cloud project, so the vault repo fetches the Fitbit's days twice a day
+and Health Atlas opens it (README, "Health vault"). Both routes below are covered: Fitbit's HRV is its own
+series, and "HRV against your normal" is the baseline-relative view. Still to check: a week or more of real
+Air data, and Google's VO₂ max and skin-temperature baseline once they settle.
+
 Two routes, both explicit:
 
 - **Fitbit export as a second file for the same person.** Settings → "Add a Fitbit export",
