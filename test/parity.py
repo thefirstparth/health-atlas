@@ -4,7 +4,7 @@ bad = 0
 def rep(*a):
     global bad; bad += 1
     if bad <= 40: print(*a)
-for k in ("exportDate","start","end","days","dob","sex","sleepGoal","sources"):
+for k in ("exportDate","start","end","days","dob","sex","sleepGoal","sources","devices"):
     if py["meta"].get(k) != js["meta"].get(k): rep("meta", k, str(py["meta"].get(k))[:200], "|", str(js["meta"].get(k))[:200])
 ks = set(py["daily"]) | set(js["daily"])
 cells = 0

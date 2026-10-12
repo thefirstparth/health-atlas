@@ -12,12 +12,17 @@ Principles
   sources (Watch, iPhone, Nike Run Club...). To avoid double counting, each hour
   takes the highest single-source total for that hour, then hours are summed.
 - Ring values (active energy, exercise minutes, stand hours, goals) come straight
-  from Apple's ActivitySummary rows.
+  from Apple's ActivitySummary rows when they hold Exercise or Stand (an Apple Watch).
+  On other days Exercise and Stand stay empty and active energy comes from the
+  ActiveEnergyBurned readings (hourly max per source), else the iPhone's Move value.
+- Sleep: nights are built per source group (Apple Watch; each other app), and each
+  night takes the Apple Watch version if there is one, else the other with most sleep.
+- Device eras: each day's dominant heart-rate source; short runs are folded in.
 - Records nested inside <Workout> are duplicates of top-level records (per Apple's
   DTD) and are skipped. Records nested inside <Correlation> (blood pressure) are
   de-duplicated by (type, start, value).
 """
-import sys, json, zipfile, math, io
+import sys, json, zipfile, math, io, re
 from collections import defaultdict
 from datetime import datetime, timedelta, date
 from lxml import etree
@@ -34,6 +39,7 @@ CUMULATIVE = {
     HK + "TimeInDaylight": "daylight",              # min
     HK + "AppleStandTime": "standMin",              # min
     HK + "DistanceSwimming": "swimming",            # m
+    HK + "ActiveEnergyBurned": "activeRaw",         # kcal; only for days without a Watch ring
 }
 # per-day mean of samples: type -> key
 MEAN = {
@@ -76,7 +82,7 @@ UNIT_FIX = {  # convert to display units
     ("walkSpeed", "m/s"): 3.6, ("runSpeed", "m/s"): 3.6,
     ("stepLen", "m"): 100, ("runVo", "m"): 100, ("runStride", "cm"): 0.01,
     ("distance", "m"): 0.001, ("cycling", "m"): 0.001, ("distance", "mi"): 1.609344,
-    ("cycling", "mi"): 1.609344, ("weight", "lb"): 0.45359237, ("basal", "kJ"): 1 / 4.184,
+    ("cycling", "mi"): 1.609344, ("weight", "lb"): 0.45359237, ("basal", "kJ"): 1 / 4.184, ("activeRaw", "kJ"): 1 / 4.184,
     ("height", "m"): 100, ("sixMin", "km"): 1000,
 }
 SLEEP_STAGE = {
@@ -125,7 +131,8 @@ def main(src, out):
     audio = defaultdict(lambda: [0.0, 0.0])          # (key, day) -> [sum(10^(L/10)*dur), sum(dur)]
     counts = defaultdict(int)                        # (key, day) -> n  (events)
     mindful = defaultdict(float)                     # day -> min
-    sleep = []                                       # (start, end, stage, isWatch)
+    sleep = []                                       # (start, end, stage, isWatch, source)
+    hr_src = defaultdict(lambda: defaultdict(int))   # day -> {source: heart-rate readings}
     rings = {}
     workouts = []
     sleep_goal = []
@@ -173,6 +180,7 @@ def main(src, out):
                 val = float(v) * UNIT_FIX.get((k, unit), 1)
                 m = mean[(k, day)]; m[0] += val; m[1] += 1
             elif t == HK + "HeartRate":
+                hr_src[day][src_name] += 1
                 val = float(v)
                 h = hr.get(day)
                 if h is None:
@@ -194,7 +202,7 @@ def main(src, out):
             elif t == "HKCategoryTypeIdentifierSleepAnalysis":
                 stg = SLEEP_STAGE.get(v)
                 if stg:
-                    sleep.append((st, ts(a["endDate"]), stg, "Watch" in src_name))
+                    sleep.append((st, ts(a["endDate"]), stg, "Watch" in src_name, src_name))
             elif t == "HKCategoryTypeIdentifierHighHeartRateEvent":
                 counts[("highHr", day)] += 1
             elif t == "HKCategoryTypeIdentifierLowHeartRateEvent":
@@ -288,25 +296,23 @@ def main(src, out):
         daily[day]["mindful"] = m
     for day, r in rings.items():
         # ActivitySummary rows exist for every calendar day since setup; keep only days with data
-        if r["move"] is not None and (r["move"] > 0 or (r["exercise"] or 0) > 0 or (r["stand"] or 0) > 0):
+        if r["move"] is None:
+            continue
+        if (r["exercise"] or 0) > 0 or (r["stand"] or 0) > 0:   # an Apple Watch ring
             daily[day]["active"] = r["move"]
             daily[day]["exercise"] = r["exercise"]
             daily[day]["stand"] = r["stand"]
             if r["moveGoal"]: daily[day]["moveGoal"] = r["moveGoal"]
             if r["exerciseGoal"]: daily[day]["exerciseGoal"] = r["exerciseGoal"]
             if r["standGoal"]: daily[day]["standGoal"] = r["standGoal"]
+        elif r["move"] > 0 and daily[day].get("activeRaw") is None:  # iPhone Move only
+            daily[day]["active"] = r["move"]
+    for o in daily.values():
+        if o.get("activeRaw") is not None and o.get("active") is None and o.get("exercise") is None:
+            o["active"] = o["activeRaw"]
+        o.pop("activeRaw", None)
 
-    # ---------------- sleep: nights keyed by wake-up date
-    # Prefer Apple Watch staged data; iPhone only records "In bed", which is not sleep.
-    sl = sorted([x for x in sleep if x[3]], key=lambda x: x[0])
-    sessions = []
-    for st, en, stg, _ in sl:
-        if sessions and st <= sessions[-1]["end"] + timedelta(minutes=60):
-            s = sessions[-1]
-            s["end"] = max(s["end"], en); s["seg"].append((st, en, stg))
-        else:
-            sessions.append({"start": st, "end": en, "seg": [(st, en, stg)]})
-
+    # ---------------- sleep: nights keyed by wake-up date, per source group
     def union_minutes(segs):
         segs = sorted(segs)
         tot = 0.0; cs = ce = None
@@ -318,42 +324,93 @@ def main(src, out):
         if cs is not None: tot += (ce - cs).total_seconds()
         return tot / 60
 
+    def sleep_nights(group):
+        sl = sorted(group, key=lambda x: x[0])
+        watch = bool(sl and sl[0][3])
+        sessions = []
+        for st, en, stg, _, _ in sl:
+            if sessions and st <= sessions[-1]["end"] + timedelta(minutes=60):
+                s = sessions[-1]
+                s["end"] = max(s["end"], en); s["seg"].append((st, en, stg))
+            else:
+                sessions.append({"start": st, "end": en, "seg": [(st, en, stg)]})
+        nights = {}
+        for s in sessions:
+            asleep_segs = [(a, b) for a, b, g in s["seg"] if g != "awake"]
+            if not asleep_segs:
+                continue
+            asleep = union_minutes(asleep_segs)
+            if asleep < 20:
+                continue
+            stages = {}
+            for g in ("core", "deep", "rem", "unspec"):
+                stages[g] = union_minutes([(a, b) for a, b, gg in s["seg"] if gg == g])
+            awake = union_minutes([(a, b) for a, b, g in s["seg"] if g == "awake"])
+            first = min(a for a, _ in asleep_segs); last = max(b for _, b in asleep_segs)
+            wake_day = last.date()
+            base = datetime.combine(wake_day, datetime.min.time())
+            rec = {"asleep": asleep, "awake": awake, **stages,
+                   "bed": (first - base).total_seconds() / 60, "wake": (last - base).total_seconds() / 60,
+                   "sessions": 1, "watch": watch}
+            rec["mid"] = (rec["bed"] + rec["wake"]) / 2
+            key = wake_day.isoformat()
+            prev = nights.get(key)
+            if prev is None:
+                nights[key] = rec
+            else:
+                # second session on the same wake date (e.g. a nap): add durations,
+                # timing stays with the longer session
+                main, other = (prev, rec) if prev["asleep"] >= rec["asleep"] else (rec, prev)
+                merged = dict(main)
+                for g in ("asleep", "awake", "core", "deep", "rem", "unspec"):
+                    merged[g] = prev[g] + rec[g]
+                merged["sessions"] = prev["sessions"] + 1
+                nights[key] = merged
+        return nights
+
+    groups = defaultdict(list)
+    for x in sleep:
+        groups["\x00watch" if x[3] else x[4]].append(x)
     nights = {}
-    for s in sessions:
-        asleep_segs = [(a, b) for a, b, g in s["seg"] if g != "awake"]
-        if not asleep_segs:
-            continue
-        asleep = union_minutes(asleep_segs)
-        if asleep < 20:
-            continue
-        stages = {}
-        for g in ("core", "deep", "rem", "unspec"):
-            stages[g] = union_minutes([(a, b) for a, b, gg in s["seg"] if gg == g])
-        awake = union_minutes([(a, b) for a, b, g in s["seg"] if g == "awake"])
-        first = min(a for a, _ in asleep_segs); last = max(b for _, b in asleep_segs)
-        wake_day = last.date()
-        base = datetime.combine(wake_day, datetime.min.time())
-        rec = {"asleep": asleep, "awake": awake, **stages,
-               "bed": (first - base).total_seconds() / 60, "wake": (last - base).total_seconds() / 60,
-               "sessions": 1}
-        rec["mid"] = (rec["bed"] + rec["wake"]) / 2
-        key = wake_day.isoformat()
-        prev = nights.get(key)
-        if prev is None:
-            nights[key] = rec
-        else:
-            # second session on the same wake date (e.g. a nap): add durations,
-            # timing stays with the longer session
-            main, other = (prev, rec) if prev["asleep"] >= rec["asleep"] else (rec, prev)
-            merged = dict(main)
-            for g in ("asleep", "awake", "core", "deep", "rem", "unspec"):
-                merged[g] = prev[g] + rec[g]
-            merged["sessions"] = prev["sessions"] + 1
-            nights[key] = merged
+    for g in sorted(groups):
+        for day, rec in sleep_nights(groups[g]).items():
+            cur = nights.get(day)
+            if cur is None or (not cur["watch"] and rec["asleep"] > cur["asleep"]):
+                nights[day] = rec
     for day, n in nights.items():
         for k in ("asleep", "awake", "core", "deep", "rem", "unspec", "bed", "wake", "mid"):
             daily[day]["sl_" + k] = n[k]
         daily[day]["sl_sessions"] = n["sessions"]
+
+    # ---------------- device eras from each day's dominant heart-rate source
+    def device_name(src):
+        if re.search(r"watch", src, re.I): return "Apple Watch"
+        if re.search(r"fitbit|google health", src, re.I): return "Fitbit"
+        return re.sub(r"^.*?['’]s\s+", "", src, count=1)
+    runs = []
+    for d in sorted(hr_src):
+        best, bn = None, -1
+        for src, cnt in sorted(hr_src[d].items()):
+            if cnt > bn: bn, best = cnt, src
+        name = device_name(best)
+        if runs and runs[-1]["name"] == name:
+            runs[-1]["to"] = d; runs[-1]["n"] += 1
+        else:
+            runs.append({"name": name, "from": d, "to": d, "n": 1})
+    changed = True
+    while changed and len(runs) > 1:
+        changed = False
+        for k, r in enumerate(runs):
+            if r["n"] >= (7 if k == len(runs) - 1 else 14):
+                continue
+            into = runs[k - 1] if k > 0 else runs[k + 1]
+            if k > 0: into["to"] = r["to"]
+            else: into["from"] = r["from"]
+            into["n"] += r["n"]; del runs[k]; changed = True; break
+        for k in range(len(runs) - 1, 0, -1):
+            if runs[k]["name"] == runs[k - 1]["name"]:
+                runs[k - 1]["to"] = runs[k]["to"]; runs[k - 1]["n"] += runs[k]["n"]; del runs[k]
+    devices = [{"name": r["name"], "from": r["from"], "to": r["to"]} for r in runs]
 
     # ---------------- columnar output
     days = sorted(daily)
@@ -377,7 +434,7 @@ def main(src, out):
                  "sources": {k: v for k, v in sorted(sources.items(), key=lambda x: -x[1])},
                  "dob": me.get("HKCharacteristicTypeIdentifierDateOfBirth"),
                  "sex": (me.get("HKCharacteristicTypeIdentifierBiologicalSex") or "").replace("HKBiologicalSex", ""),
-                 "sleepGoal": sleep_goal},
+                 "sleepGoal": sleep_goal, "devices": devices},
         "daily": cols,
         "points": {k: sorted([list(p) for p in v]) for k, v in points.items()},
         "workouts": workouts,

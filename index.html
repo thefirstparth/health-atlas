@@ -43,7 +43,7 @@
       <p class="lp-lede rv">Drop in the export from the Health app and get sleep, heart, activity, workouts and more as calm, precise charts. Day by day, year by year. Your file never leaves this browser.</p>
 
       <div class="drop lp-drop rv" id="drop" tabindex="-1">
-        <input type="file" id="file" accept=".zip,.xml,.json,application/zip,text/xml,application/json" hidden>
+        <input type="file" id="file" accept=".zip,.xml,.json,.vault,application/zip,text/xml,application/json" hidden>
         <div class="lp-file" aria-hidden="true">
           <svg viewBox="0 0 48 56"><path class="fb" d="M8 2h22l14 14v34a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4Z"/><path class="ff" d="M30 2v10a4 4 0 0 0 4 4h10"/><path class="fz" d="M17 7h4M21 11h4M17 15h4M21 19h4M17 23h4"/><rect class="fr" x="9" y="33" width="28" height="14" rx="4"/><text class="ft" x="23" y="43.5" text-anchor="middle">ZIP</text></svg>
         </div>
@@ -56,6 +56,7 @@
       </div>
       <div class="lp-try rv"><button type="button" class="lp-trybtn" id="demoTry">No export handy? <b>See it with sample data</b> <span aria-hidden="true">→</span></button>
         <button type="button" class="lp-trybtn" id="cmpTry">Comparing with friends? <b>Open two or three exports</b> <span aria-hidden="true">→</span></button>
+        <button type="button" class="lp-trybtn" id="vaultTry">Keep a health vault? <b>Open it</b> <span aria-hidden="true">→</span></button>
       </div>
       <p class="err" id="err" role="alert" hidden></p>
 
@@ -253,6 +254,8 @@
         <li>Active energy, exercise minutes, stand hours and ring goals are Apple's own daily Activity summaries.</li>
         <li>Sleep uses Apple Watch sleep stages (iPhone Bedtime records time in bed, not sleep). If an export has no Apple Watch sleep, other apps that record sleep are used instead. A night is dated by the day you woke up. Bedtime and wake time are the first and last minute asleep; the midpoint is halfway between.</li>
         <li>Sound levels are energy averages (Leq), weighted by how long each sample lasted. Times use the local clock time on each record.</li>
+        <li><b>Changing devices.</b> The wearable each day is the one that recorded its heart rate. When it changes for good (more than a week), charts of what the wearable records show a dashed line on the day, trend lines break there, and comparisons, your usual and records only compare days from the same device, because two devices measure differently. Measures from the iPhone carry straight on. Sleep uses the Apple Watch on nights it recorded, and another app on nights it did not.</li>
+        <li><b>Health vault.</b> A vault holds a wearable's days from the Google Health API, encrypted, and is opened here with its passphrase. Its days are laid after the Apple Health export it carries. Fitbit's HRV (RMSSD) is its own measure, never mixed with Apple's (SDNN); <i>HRV against your normal</i> puts each night against the median of the previous 60 nights on the same device, so both read on one scale. Google's copies of Apple Health data are left out. Air and weather are outdoor estimates for the city, not readings in your room.</li>
         <li><b>Targets and chains.</b> <span id="tgtli"></span> Change the targets in Settings.</li>
         <li>The one-line explainers summarise widely used guidance (Apple, WHO, AHA). They are general context, not medical advice.</li>
       </ul>
@@ -294,6 +297,7 @@
       <div class="acts">
         <button type="button" class="ghost" id="cmpFromSettings">Compare with friends</button>
         <button type="button" class="ghost" id="addExport">Add a newer export</button>
+        <button type="button" class="ghost" id="vaultFromSettings">Open your health vault</button>
         <button type="button" class="ghost" id="saveJson">Save a copy (.json)</button>
         <button type="button" class="danger" id="forget">Forget my data</button>
       </div>
@@ -320,6 +324,26 @@
     <div class="sh-foot">
       <button type="button" class="linkbtn cdemo" id="cmpDemo">Try it with sample people</button>
       <button type="submit" class="primary" id="cmpGo">Compare</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== Health vault ===================== -->
+<dialog id="vault" aria-labelledby="vaultTitle">
+  <form method="dialog" class="sheet" id="vaultForm" novalidate>
+    <div class="sh-head"><h2 id="vaultTitle">Open your health vault</h2><button class="xclose" type="button" id="vaultClose" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 3l10 10M13 3 3 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+    <p class="small">A health vault keeps a wearable's data from the Google Health API, encrypted, in your own private GitHub repo. Choose the repo's zip (on GitHub: <b>Code → Download ZIP</b>) or its <b>.vault</b> files, then type the vault passphrase. Everything is decrypted on this device; the passphrase is not kept.</p>
+    <div class="vpick">
+      <button type="button" class="ghost" id="vaultPick">Choose files</button>
+      <span class="small" id="vaultFiles">Nothing chosen yet</span>
+    </div>
+    <input type="file" id="vaultFile" accept=".zip,.vault,application/zip" multiple hidden>
+    <label class="vpass"><span>Vault passphrase</span><input type="password" id="vaultPass" autocomplete="off" spellcheck="false"></label>
+    <p class="err" id="vaultErr" role="alert" hidden></p>
+    <p class="small">If the vault holds an Apple Health export (<b>apple-watch.vault</b>), the wearable's days are laid after it on one timeline. Otherwise they are added to what this browser already shows.</p>
+    <div class="sh-foot">
+      <button type="button" class="ghost" id="vaultCancel">Cancel</button>
+      <button type="submit" class="primary" id="vaultGo">Open</button>
     </div>
   </form>
 </dialog>

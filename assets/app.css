@@ -58,8 +58,8 @@ a{color:inherit}
 footer.about .fine{margin-top:10px;color:var(--ink-3)}
 
 /* settings sheet */
-dialog#settings,dialog#cmp{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(520px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain}
-dialog#settings::backdrop,dialog#cmp::backdrop{background:rgba(10,11,14,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+dialog#settings,dialog#cmp,dialog#vault{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(520px,calc(100vw - 24px));width:100%;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain}
+dialog#settings::backdrop,dialog#cmp::backdrop,dialog#vault::backdrop{background:rgba(10,11,14,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 .sheet{background:var(--card);border-radius:24px;padding:22px 24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 .sh-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .sh-head h2{margin:0;font:700 22px/1.2 var(--display);letter-spacing:-.03em}
@@ -138,6 +138,15 @@ html.embed .shell{padding-bottom:40px}
 #cmp .err{margin-top:12px}
 #cmp .sh-foot{align-items:center}
 #cmp .cdemo{margin:0 auto 0 0}
+
+/* health vault */
+#setForm.cmp #vaultFromSettings{display:none}
+.vpick{display:flex;align-items:center;gap:12px;margin:16px 0 0;flex-wrap:wrap}
+.vpick .small{margin:0;min-width:0;overflow-wrap:anywhere}
+.vpass{display:flex;flex-direction:column;gap:6px;margin:16px 0 0;font-weight:600;font-size:14px}
+.vpass input{font:500 16px var(--sans);color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:10px 12px;width:100%}
+.vpass input:focus{outline:2px solid var(--focus);outline-offset:1px}
+#vault .err{margin-top:12px}
 .cmpnote button + button{margin-left:-4px}
 @media (max-width:600px){
   .cslot{grid-template-columns:12px minmax(0,1fr) 30px;grid-template-areas:'s n x' 'f f f';padding:10px}

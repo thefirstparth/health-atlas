@@ -1,10 +1,30 @@
-// Runs the parser off the main thread. Messages in: {file, prev?}. Out: progress | done | error.
+// Runs the parser off the main thread. Messages in: {file, prev?} or {vault: {files, pass}, prev?}.
+// Out: progress | done | error.
 import { parseExport, mergeData } from './parser.js';
 import { validateData, trimTimeline } from './validate.js';
+import { readVaultFiles, openSealed, vaultDataset, combine, VaultError } from './vault.js';
+
+// A health vault: decrypt every file here, then lay its days onto the Apple export it carries (or onto what
+// this browser already holds). The passphrase never leaves this worker and is not kept.
+async function openVault({ files, pass }, prev) {
+  const got = await readVaultFiles(files), total = got.months.length + (got.apple ? 1 : 0);
+  let n = 0; const step = () => self.postMessage({ type: 'progress', f: ++n / (total + 1), stage: 'decrypting' });
+  const apple = got.apple ? await openSealed(got.apple, pass) : null; if (apple) step();
+  const months = []; for (const t of got.months) { months.push(await openSealed(t, pass)); step(); }
+  let base = apple && apple.data ? validateData(apple.data) : prev ? validateData(prev) : null;
+  if (base) { delete base.meta.dob; delete base.meta.sex; base = trimTimeline(base); }
+  const data = combine(base, vaultDataset(months), { merge: mergeData, vaultMonths: months.length, hasApple: !!apple });
+  return trimTimeline(validateData(data));
+}
 
 self.onmessage = async ({ data: msg }) => {
   const { file, prev } = msg;
   try {
+    if (msg.vault) {
+      const data = await openVault(msg.vault, prev);
+      self.postMessage({ type: 'done', data, fresh: { start: data.meta.start, end: data.meta.end }, vault: data.meta.vault });
+      return;
+    }
     let data;
     if (/\.json$/i.test(file.name || '')) {
       data = validateData(JSON.parse(await file.text()));
@@ -20,7 +40,7 @@ self.onmessage = async ({ data: msg }) => {
     const merged = prev ? trimTimeline(mergeData(validateData(prev), data)) : data;
     self.postMessage({ type: 'done', data: merged, fresh: { start: data.meta.start, end: data.meta.end } });
   } catch (e) {
-    self.postMessage({ type: 'error', message: friendly(e) });
+    self.postMessage({ type: 'error', message: friendly(e), vault: e instanceof VaultError });
   }
 };
 

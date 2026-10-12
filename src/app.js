@@ -3,6 +3,7 @@ import { mountDashboard, DEFAULT_TARGETS } from './dashboard.js';
 import * as store from './store.js';
 import { validateData, trimTimeline } from './validate.js';
 import { sampleData, samplePeople } from './sample.js';
+import { isVault } from './vault.js';
 
 const $ = id => document.getElementById(id);
 const VIEWS = ['landing', 'processing', 'app'];
@@ -34,6 +35,7 @@ function openDashboard() {
   if (CMP && cmpPeople().length < 2) CMP = null;
   show('app');
   $('demoBar').hidden = !DEMO || EMBED;
+  if (DEMO) $('demoBar').querySelector('span').innerHTML = DEMO.meta.devices ? `<b>Sample data.</b> A made-up person who moved from an Apple Watch to a Fitbit 75 days ago${DEMO.daily.hrvRmssd ? ' and keeps a health vault' : ''}.` : '<b>Sample data.</b> A made-up person, so you can look around.';
   $('cmpBar').hidden = !CMP || EMBED;
   $('shareBtn').hidden = !!CMP;
   if (CMP) {
@@ -44,7 +46,7 @@ function openDashboard() {
   } else dash = mountDashboard(DEMO || DATA, { units: units(), targets: SET.targets, ephemeral: !!DEMO });
 }
 // Sample data: a made-up person, never stored, never mixed with your own data.
-function openDemo() { DEMO = sampleData(); CMP = null; openDashboard(); }
+function openDemo(opts) { DEMO = sampleData(undefined, opts); CMP = null; openDashboard(); }
 function closeDemo() {
   DEMO = null; try { history.replaceState(null, '', location.pathname); } catch (e) {}
   if (DATA) openDashboard(); else { if (dash) { dash.destroy(); dash = null; } show('landing'); }
@@ -93,6 +95,10 @@ function resetWorker() { if (worker) worker.terminate(); worker = makeWorker(); 
 // says what trimTimeline left out, with the dates that gave it away
 const trimNote = m => { const t = m.trimmed; if (!t) return ''; const n = t.days + t.readings, outer = [t.from < m.start ? fmtDay(t.from) : null, t.to > m.end ? fmtDay(t.to) : null].filter(Boolean);
   return ` Left out ${n.toLocaleString()} ${n === 1 ? 'entry' : 'entries'} dated far outside the rest of your data${outer.length ? ` (${outer.join(' and ')})` : ''}, most likely from a wrong clock.`; };
+// the wearables the export was recorded with, once there has been a change
+const deviceNote = m => { const d = m.devices || []; if (d.length < 2) return ''; return ' Devices: ' + d.map((x, k) => k === d.length - 1 ? `${x.name} from ${fmtDay(x.from)}` : `${x.name} ${k ? `${fmtDay(x.from)} – ` : 'until '}${fmtDay(x.to)}`).join('; ') + '.'; };
+// what the last opened health vault added
+const vaultNote = m => { const v = m.vault; if (!v) return ''; return ` Health vault opened ${fmtDay(v.opened)}: ${v.fitbitFrom ? `Fitbit days from ${fmtDay(v.fitbitFrom)} ` : ''}up to ${fmtDay(v.through)}${v.apple ? ', on top of the Apple Health export it holds' : ''}. Open it again for newer days.`; };
 const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 $('cancel').addEventListener('click', () => { if (cmpCancel) { cmpCancel(); return; } resetWorker(); if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); });
@@ -100,17 +106,18 @@ $('cancel').addEventListener('click', () => { if (cmpCancel) { cmpCancel(); retu
 // file input: one input, the "merge" flag decides what happens with the result
 let mergeNext = false;
 $('pick').addEventListener('click', () => { mergeNext = false; $('file').click(); });
-$('file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; readFile(f, { merge: mergeNext && !!DATA && !DEMO }); });
+$('file').addEventListener('change', async e => { const f = e.target.files[0]; e.target.value = ''; if (f && await isVault(f)) { openVaultDialog([f]); return; } readFile(f, { merge: mergeNext && !!DATA && !DEMO }); });
 
 // drag and drop, on the landing card or anywhere on the dashboard (which merges)
 let dragDepth = 0;
 addEventListener('dragenter', e => { if (hasFiles(e)) { e.preventDefault(); dragDepth++; $('drop').classList.add('over'); } });
 addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').classList.remove('over'); } });
 addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
-addEventListener('drop', e => {
+addEventListener('drop', async e => {
   if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('drop').classList.remove('over');
   if (current === 'processing') return;
   const fs = [...e.dataTransfer.files];
+  if ($('vault').open || (fs.length && !CMP && !$('cmp').open && (await Promise.all(fs.map(isVault))).every(Boolean))) { openVaultDialog(fs); return; }
   if (fs.length > 1 || $('cmp').open || CMP) { openCmpDialog(fs); return; }
   const f = fs[0]; if (f) readFile(f, { merge: current === 'app' && !!DATA && !DEMO && !CMP });
 });
@@ -131,7 +138,7 @@ $('menuBtn').addEventListener('click', () => {
   if (demo) $('dataInfo').textContent = 'You are looking at sample data from made-up people. Settings you change here are not saved.';
   else if (CMP) $('dataInfo').textContent = `Comparing ${listNames(CMP.people.map(x => x.name))}. Their exports are kept only in this browser until you end the comparison.`;
   const m = DATA && DATA.meta, src = m ? Object.keys(m.sources || {}).length : 0;
-  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.${trimNote(m)}`;
+  if (!demo && !CMP && m) $('dataInfo').textContent = `${fmtDay(m.start)} – ${fmtDay(m.end)} · ${m.days.toLocaleString()} days${m.exportDate ? ` · export dated ${fmtDay(m.exportDate.slice(0, 10))}` : ''}${src ? ` · ${src} source${src > 1 ? 's' : ''}` : ''}. Stored only in this browser.${trimNote(m)}${deviceNote(m)}${vaultNote(m)}`;
   disarm();
   dlg.showModal();
 });
@@ -179,6 +186,55 @@ $('posterSave').addEventListener('click', () => { if (!pUrl) return; const a = d
 $('posterShare').addEventListener('click', async () => { try { await navigator.share({ files: [new File([pBlob], `health-atlas-${pYear}.png`, { type: 'image/png' })], title: `My ${pYear} in health` }); } catch (e) {} });
 
 $('addExport').addEventListener('click', () => { dlg.close(); mergeNext = true; $('file').click(); });
+
+// ---------------------------------------------------------------- health vault
+// Files (the vault repo's zip, or its .vault files) and the passphrase go to the worker, which decrypts there.
+const vdlg = $('vault'); let vFiles = [];
+function openVaultDialog(files = vFiles, err = '') {
+  vFiles = files || []; $('vaultPass').value = '';
+  $('vaultFiles').textContent = vFiles.length ? vFiles.map(f => f.name).join(', ') : 'Nothing chosen yet';
+  $('vaultErr').textContent = err; $('vaultErr').hidden = !err;
+  if (!vdlg.open) vdlg.showModal();
+  (vFiles.length ? $('vaultPass') : $('vaultPick')).focus();
+}
+$('vaultTry').addEventListener('click', () => openVaultDialog([]));
+$('vaultFromSettings').addEventListener('click', () => { dlg.close(); openVaultDialog([]); });
+$('vaultPick').addEventListener('click', () => $('vaultFile').click());
+$('vaultFile').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) openVaultDialog(fs, ''); });
+$('vaultClose').addEventListener('click', () => vdlg.close());
+$('vaultCancel').addEventListener('click', () => vdlg.close());
+$('vaultForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const pass = $('vaultPass').value;
+  // the passphrase goes to the worker once and is not left in the page
+  if (vFiles.length && pass) $('vaultPass').value = '';
+  if (!vFiles.length) { $('vaultErr').textContent = 'Choose the vault zip or its .vault files first.'; $('vaultErr').hidden = false; return; }
+  if (!pass) { $('vaultErr').textContent = 'Type the vault passphrase.'; $('vaultErr').hidden = false; $('vaultPass').focus(); return; }
+  vdlg.close(); readVault(vFiles, pass);
+});
+function readVault(files, pass) {
+  prevView = current === 'processing' ? prevView : current || 'landing';
+  $('err').hidden = true;
+  $('procFile').textContent = files.length === 1 ? `${files[0].name} · ${mb(files[0].size)}` : `${files.length} files`;
+  $('procTitle').textContent = 'Opening your health vault';
+  setProgress(0, 'Unlocking…'); show('processing');
+  worker.onmessage = async ({ data: m }) => {
+    if (m.type === 'progress') setProgress(m.f, 'Unlocking…');
+    else if (m.type === 'done') {
+      DATA = m.data; DEMO = null; try { if (location.search) history.replaceState(null, '', location.pathname); } catch (e) {}
+      try { await store.set('data', DATA); store.persist(); } catch (e) { toast('Could not save in this browser; the data will be gone when you close the tab.', 6000); }
+      openDashboard();
+      const v = m.vault || {}; toast(`Opened your health vault${v.through ? `: days up to ${fmtDay(v.through)}` : ''}.`);
+    } else if (m.type === 'error') {
+      resetWorker();
+      // a wrong passphrase or wrong files: back to the dialog, files kept, with the reason
+      if (m.vault) { if (prevView === 'app' && (DATA || DEMO)) openDashboard(); else show('landing'); openVaultDialog(files, m.message); }
+      else fail(m.message);
+    }
+  };
+  worker.onerror = e => { e.preventDefault(); fail('Something went wrong while opening the vault.'); };
+  worker.postMessage({ vault: { files, pass }, prev: DATA && !DEMO ? DATA : null });
+}
 $('saveJson').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(DATA)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `health-atlas-${DATA.meta.end}.json`;
@@ -319,6 +375,6 @@ async function runCompare(slots) {
   // data saved before trimTimeline existed is trimmed on load (and saved again, so it happens once)
   if (d) { try { DATA = trimTimeline(validateData(d)); if (DATA !== d) store.set('data', DATA).catch(() => {}); } catch (e) { DATA = null; } }
   if (c) { try { CMP = validateCompare(c); } catch (e) { CMP = null; } }
-  if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo();
+  if (EMBED || Q.has('demo')) Q.get('demo') === 'compare' && !EMBED ? openCmpDemo() : openDemo(Q.get('demo') === 'switch' ? { switchDays: 75 } : Q.get('demo') === 'vault' ? { switchDays: 75, vault: true } : undefined);
   else if (DATA || (CMP && cmpPeople().length > 1)) openDashboard(); else show('landing');
 })();

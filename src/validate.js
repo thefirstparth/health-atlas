@@ -27,6 +27,7 @@ export function validateData(d) {
   }
   if (m.sources && typeof m.sources !== 'object') bad('sources');
   if (m.sleepGoal && !Array.isArray(m.sleepGoal)) bad('sleep goal');
+  if (m.devices != null && (!Array.isArray(m.devices) || m.devices.some(x => !x || !str(x.name, 80) || !ISO_D.test(x.from) || !ISO_D.test(x.to)))) bad('devices');
   return d;
 }
 
@@ -63,5 +64,6 @@ export function trimTimeline(d) {
   const prev = d.meta.trimmed;
   const trimmed = { days: dropped + (prev ? prev.days : 0), readings: droppedPts + (d.workouts.length - workouts.length) + (prev ? prev.readings : 0),
     from: prev ? prev.from : d.meta.start, to: prev ? prev.to : d.meta.end };
-  return { ...d, meta: { ...d.meta, start, end, days: e - s + 1, trimmed }, daily, points, workouts };
+  const devices = (d.meta.devices || []).filter(x => x.to >= start && x.from <= end).map(x => ({ ...x, from: x.from < start ? start : x.from, to: x.to > end ? end : x.to }));
+  return { ...d, meta: { ...d.meta, start, end, days: e - s + 1, trimmed, ...(d.meta.devices ? { devices } : {}) }, daily, points, workouts };
 }

@@ -8,6 +8,8 @@ const HK = 'HKQuantityTypeIdentifier';
 const CUMULATIVE = {
   StepCount: 'steps', DistanceWalkingRunning: 'distance', FlightsClimbed: 'flights', DistanceCycling: 'cycling',
   BasalEnergyBurned: 'basal', TimeInDaylight: 'daylight', AppleStandTime: 'standMin', DistanceSwimming: 'swimming',
+  // only used on days without an Apple Watch Activity ring (see assemble); never stored as its own column
+  ActiveEnergyBurned: 'activeRaw',
 };
 const MEAN = {
   RestingHeartRate: 'rhr', WalkingHeartRateAverage: 'walkHr', HeartRateVariabilitySDNN: 'hrv', RespiratoryRate: 'resp',
@@ -27,7 +29,7 @@ const T_CUM = prefix(CUMULATIVE), T_MEAN = prefix(MEAN), T_PTS = prefix(POINTS),
 const UNIT_FIX = {
   'walkSpeed|m/s': 3.6, 'runSpeed|m/s': 3.6, 'stepLen|m': 100, 'runVo|m': 100, 'runStride|cm': 0.01,
   'distance|m': 0.001, 'cycling|m': 0.001, 'distance|mi': 1.609344, 'cycling|mi': 1.609344,
-  'weight|lb': 0.45359237, 'basal|kJ': 1 / 4.184, 'height|m': 100, 'sixMin|km': 1000,
+  'weight|lb': 0.45359237, 'basal|kJ': 1 / 4.184, 'activeRaw|kJ': 1 / 4.184, 'height|m': 100, 'sixMin|km': 1000,
   // not in the Python reference (the reference exports never use them); harmless for parity
   'distance|ft': 0.0003048, 'cycling|ft': 0.0003048, 'swimming|yd': 0.9144, 'swimming|km': 1000,
   'weight|g': 0.001, 'weight|st': 6.35029318, 'height|in': 2.54, 'height|ft': 30.48, 'height|m ': 100,
@@ -101,7 +103,7 @@ const ATTR = /\s*([^\s=\/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/y;
 function makeAcc() {
   return {
     cum: new Map(), mean: new Map(), hr: new Map(), points: new Map(), audio: new Map(), counts: new Map(),
-    mindful: new Map(), sleep: [], rings: new Map(), workouts: [], sleepGoal: [], sources: new Map(),
+    mindful: new Map(), sleep: [], rings: new Map(), workouts: [], sleepGoal: [], sources: new Map(), hrSrc: new Map(),
     exportDate: null, me: {}, distUnits: { metric: 0, imperial: 0 }, depthWorkout: 0, depthCorr: 0, stack: [], curWorkout: null, records: 0,
   };
 }
@@ -123,6 +125,7 @@ function onRecord(A, a) {
     const val = parseFloat(v) * fix(k, unit), key = kd(k, day);
     const m = A.mean.get(key); if (m) { m[0] += val; m[1]++; } else A.mean.set(key, [val, 1]);
   } else if (t === HK + 'HeartRate') {
+    let hs = A.hrSrc.get(day); if (!hs) A.hrSrc.set(day, (hs = new Map())); hs.set(src, (hs.get(src) || 0) + 1);
     const val = parseFloat(v), h = A.hr.get(day);
     if (!h) A.hr.set(day, [val, val, val, 1]);
     else { if (val < h[0]) h[0] = val; if (val > h[1]) h[1] = val; h[2] += val; h[3]++; }
@@ -136,7 +139,7 @@ function onRecord(A, a) {
     acc[0] += (10 ** (parseFloat(v) / 10)) * dur; acc[1] += dur;
   } else if (t === 'HKCategoryTypeIdentifierSleepAnalysis') {
     const stg = SLEEP_STAGE[v];
-    if (stg) A.sleep.push([ts(s), ts(a.endDate), stg, src.includes('Watch')]);
+    if (stg) A.sleep.push([ts(s), ts(a.endDate), stg, src.includes('Watch'), src]);
   } else if ((k = EVENTS[t])) {
     const key = kd(k, day); A.counts.set(key, (A.counts.get(key) || 0) + 1);
   } else if (t === 'HKCategoryTypeIdentifierMindfulSession') {
@@ -272,6 +275,67 @@ function unionMinutes(segs) {
   return tot / 60;
 }
 
+// one source group's sleep records -> nights keyed by wake-up date (unchanged rules from before)
+function sleepNights(sl) {
+  sl = sl.slice().sort((x, y) => x[0] - y[0]); // stable, like Python's sorted
+  const watch = !!(sl[0] && sl[0][3]);
+  const sessions = [];
+  for (const [st, en, stg] of sl) {
+    const last = sessions[sessions.length - 1];
+    if (last && st <= last.end + 3600e3) { last.end = Math.max(last.end, en); last.seg.push([st, en, stg]); }
+    else sessions.push({ start: st, end: en, seg: [[st, en, stg]] });
+  }
+  const nights = new Map();
+  for (const s of sessions) {
+    const asl = s.seg.filter(x => x[2] !== 'awake').map(x => [x[0], x[1]]);
+    if (!asl.length) continue;
+    const asleep = unionMinutes(asl);
+    if (asleep < 20) continue;
+    const rec = { asleep, awake: unionMinutes(s.seg.filter(x => x[2] === 'awake').map(x => [x[0], x[1]])), watch };
+    for (const g of ['core', 'deep', 'rem', 'unspec']) rec[g] = unionMinutes(s.seg.filter(x => x[2] === g).map(x => [x[0], x[1]]));
+    let first = Infinity, lastEnd = -Infinity; for (const [a, b] of asl) { if (a < first) first = a; if (b > lastEnd) lastEnd = b; }
+    const wakeDay = isoDay(lastEnd), base = Date.parse(wakeDay + 'T00:00:00Z');
+    rec.bed = (first - base) / 60000; rec.wake = (lastEnd - base) / 60000; rec.sessions = 1; rec.mid = (rec.bed + rec.wake) / 2;
+    const prev = nights.get(wakeDay);
+    if (!prev) nights.set(wakeDay, rec);
+    else {
+      const [main] = prev.asleep >= rec.asleep ? [prev, rec] : [rec, prev];
+      const merged = { ...main };
+      for (const g of ['asleep', 'awake', 'core', 'deep', 'rem', 'unspec']) merged[g] = prev[g] + rec[g];
+      merged.sessions = prev.sessions + 1; nights.set(wakeDay, merged);
+    }
+  }
+  return nights;
+}
+
+// Which wearable was worn: each day's heart-rate readings name it. Runs of the same device become
+// eras; a run of fewer than 14 days with readings (a borrowed watch, a chest strap during one workout)
+// is folded into the era around it, except the latest run, which counts after 7 days, so a recent
+// switch shows up within a week.
+const deviceName = s => /watch/i.test(s) ? 'Apple Watch' : /fitbit|google health/i.test(s) ? 'Fitbit' : s.replace(/^.*?['’]s\s+/, '');
+export function deviceEras(hrSrc) {
+  const days = [...hrSrc.keys()].sort((a, b) => a - b);
+  let runs = [];
+  for (const d of days) {
+    let best = null, bn = -1;
+    for (const [src, n] of [...hrSrc.get(d).entries()].sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)) if (n > bn) { bn = n; best = src; }
+    const name = deviceName(best), last = runs[runs.length - 1];
+    if (last && last.name === name) { last.to = d; last.n++; } else runs.push({ name, from: d, to: d, n: 1 });
+  }
+  for (let changed = true; changed && runs.length > 1;) {
+    changed = false;
+    for (let k = 0; k < runs.length; k++) {
+      const r = runs[k], min = k === runs.length - 1 ? 7 : 14;
+      if (r.n >= min) continue;
+      const into = k > 0 ? runs[k - 1] : runs[k + 1];
+      if (k > 0) { into.to = r.to; } else { into.from = r.from; }
+      into.n += r.n; runs.splice(k, 1); changed = true; break;
+    }
+    for (let k = runs.length - 1; k > 0; k--) if (runs[k].name === runs[k - 1].name) { runs[k - 1].to = runs[k].to; runs[k - 1].n += runs[k].n; runs.splice(k, 1); }
+  }
+  return runs.map(r => ({ name: r.name, from: numIso(r.from), to: numIso(r.to) }));
+}
+
 export function assemble(A, { generated } = {}) {
   const daily = new Map(); const D = day => { let o = daily.get(day); if (!o) daily.set(day, (o = {})); return o; };
   const agg = new Map();
@@ -286,45 +350,29 @@ export function assemble(A, { generated } = {}) {
   for (const [x, [e, d]] of A.audio) { const [k, day] = unkd(x); if (d > 0) D(day)[k] = 10 * Math.log10(e / d); }
   for (const [x, n] of A.counts) { const [k, day] = unkd(x); D(day)[k] = n; }
   for (const [day, m] of A.mindful) D(numIso(day)).mindful = m;
+  // Activity rings: a day whose ring has Exercise or Stand came from an Apple Watch and is used as before.
+  // A Move-only ring (iPhone without a Watch) has no real Exercise or Stand, so those stay empty, and
+  // active energy comes from the energy readings (highest source per hour), which is where another
+  // wearable's calories land. Without readings, the iPhone's Move value is kept.
   for (const [dn, r] of A.rings) { const day = numIso(dn);
-    if (r.move !== null && (r.move > 0 || (r.exercise || 0) > 0 || (r.stand || 0) > 0)) {
+    if (r.move === null) continue;
+    if ((r.exercise || 0) > 0 || (r.stand || 0) > 0) {
       const o = D(day); o.active = r.move; o.exercise = r.exercise; o.stand = r.stand;
       if (r.moveGoal) o.moveGoal = r.moveGoal; if (r.exerciseGoal) o.exerciseGoal = r.exerciseGoal; if (r.standGoal) o.standGoal = r.standGoal;
-    }
+    } else if (r.move > 0) { const o = D(day); if (o.activeRaw == null) o.active = r.move; }
   }
+  for (const o of daily.values()) { if (o.activeRaw != null && o.active == null && o.exercise == null) o.active = o.activeRaw; delete o.activeRaw; }
 
-  // sleep: Apple Watch staged data; if an export has none, fall back to any source with sleep stages
-  let sl = A.sleep.filter(x => x[3]);
-  let sleepSource = 'watch';
-  if (!sl.length && A.sleep.length) { sl = A.sleep.slice(); sleepSource = 'other'; }
-  if (!sl.length) sleepSource = null;
-  sl.sort((x, y) => x[0] - y[0]); // stable, like Python's sorted
-  const sessions = [];
-  for (const [st, en, stg] of sl) {
-    const last = sessions[sessions.length - 1];
-    if (last && st <= last.end + 3600e3) { last.end = Math.max(last.end, en); last.seg.push([st, en, stg]); }
-    else sessions.push({ start: st, end: en, seg: [[st, en, stg]] });
-  }
+  // sleep: nights are built per source group (Apple Watch, and each other app separately), then each
+  // night takes the Apple Watch version when there is one, else the other source with the most sleep.
+  // So a switch from an Apple Watch to another wearable keeps every night.
+  const groups = new Map();
+  for (const x of A.sleep) { const g = x[3] ? '\u0000watch' : x[4]; let a = groups.get(g); if (!a) groups.set(g, (a = [])); a.push(x); }
+  const byGroup = [...groups.entries()].sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).map(([g, sl]) => [g, sleepNights(sl)]);
   const nights = new Map();
-  for (const s of sessions) {
-    const asl = s.seg.filter(x => x[2] !== 'awake').map(x => [x[0], x[1]]);
-    if (!asl.length) continue;
-    const asleep = unionMinutes(asl);
-    if (asleep < 20) continue;
-    const rec = { asleep, awake: unionMinutes(s.seg.filter(x => x[2] === 'awake').map(x => [x[0], x[1]])) };
-    for (const g of ['core', 'deep', 'rem', 'unspec']) rec[g] = unionMinutes(s.seg.filter(x => x[2] === g).map(x => [x[0], x[1]]));
-    let first = Infinity, lastEnd = -Infinity; for (const [a, b] of asl) { if (a < first) first = a; if (b > lastEnd) lastEnd = b; }
-    const wakeDay = isoDay(lastEnd), base = Date.parse(wakeDay + 'T00:00:00Z');
-    rec.bed = (first - base) / 60000; rec.wake = (lastEnd - base) / 60000; rec.sessions = 1; rec.mid = (rec.bed + rec.wake) / 2;
-    const prev = nights.get(wakeDay);
-    if (!prev) nights.set(wakeDay, rec);
-    else {
-      const [main] = prev.asleep >= rec.asleep ? [prev, rec] : [rec, prev];
-      const merged = { ...main };
-      for (const g of ['asleep', 'awake', 'core', 'deep', 'rem', 'unspec']) merged[g] = prev[g] + rec[g];
-      merged.sessions = prev.sessions + 1; nights.set(wakeDay, merged);
-    }
-  }
+  for (const [, ns] of byGroup) for (const [day, rec] of ns) { const cur = nights.get(day); if (!cur || (!cur.watch && rec.asleep > cur.asleep)) nights.set(day, rec); }
+  const kinds = new Set([...nights.values()].map(n => n.watch));
+  const sleepSource = !nights.size ? null : kinds.has(true) && kinds.has(false) ? 'mixed' : kinds.has(true) ? 'watch' : 'other';
   for (const [day, n] of nights) {
     const o = D(day);
     for (const k of ['asleep', 'awake', 'core', 'deep', 'rem', 'unspec', 'bed', 'wake', 'mid']) o['sl_' + k] = n[k];
@@ -354,7 +402,7 @@ export function assemble(A, { generated } = {}) {
       start, end, days: n, sources,
       dob: A.me.HKCharacteristicTypeIdentifierDateOfBirth ?? null,
       sex: (A.me.HKCharacteristicTypeIdentifierBiologicalSex || '').replace('HKBiologicalSex', ''),
-      sleepGoal: A.sleepGoal, sleepSource, records: A.records,
+      sleepGoal: A.sleepGoal, sleepSource, records: A.records, devices: deviceEras(A.hrSrc),
       unitsHint: A.distUnits.imperial > A.distUnits.metric ? 'imperial' : A.distUnits.metric ? 'metric' : null,
     },
     daily: cols, points, workouts,
