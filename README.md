@@ -18,7 +18,7 @@ The site runs entirely in your browser. You choose your `export.zip`, the page r
 | `src/dashboard.js` | The dashboard (overview rules, charts, scrubbing, tapestry, calendars, records, poster) |
 | `src/compare.js` | Compare mode: two or three people on one timeline, built from the dashboard's own chart helpers |
 | `src/icons.js` | The chapter line icons, shared by the dashboard and the home page |
-| `src/sample.js` | Sample data for the demo (`?demo`), the compare demo (`?demo=compare`) and the home page. Made up, never stored |
+| `src/sample.js` | Sample data for the demo (`?demo`), the compare demo (`?demo=compare`), the device-switch demo (`?demo=switch`) and the home page. Made up, never stored |
 | `src/landing.js` | Home page: the sleep recorder figure, the zoom-out story, chapters and the live demo |
 | `assets/fonts/` | Figtree (text), Newsreader (headlines) and IBM Plex Mono (labels), self-hosted under the OFL |
 | `vercel.json` | Security headers (CSP and others) for every path |
