@@ -170,6 +170,9 @@ export function vaultDataset(monthValues) {
       const hr = g['heart-rate'];
       if (hr) { o.hrMin = num(hr.beatsPerMinuteMin); o.hrMax = num(hr.beatsPerMinuteMax); o.hrAvg = r(num(hr.beatsPerMinuteAvg)); }
       if (g['active-energy-burned'] && num(g['active-energy-burned'].kcalSum) != null) o.active = r(num(g['active-energy-burned'].kcalSum));
+      // resting energy carries on: Google's total for the day minus the part from movement
+      const tot = g['total-calories'] && num(g['total-calories'].kcalSum);
+      if (tot != null && o.active != null && tot - o.active > 0) o.basal = r(tot - o.active);
       // irregular rhythm (AFib) notifications from the band, counted on the day they started
       const irn = list(g['irregular-rhythm-notification']).filter(x => x && x._platform === FITBIT);
       if (irn.length) o.irregular = irn.length;

@@ -98,9 +98,10 @@ Open it with **Keep a health vault? Open it** on the home page, or **Open your h
 What it adds, only for datasets that have it (nobody else sees these, not even as "not recorded"):
 
 - **Heart rate variability**: one card for both devices. The Apple Watch's HRV (SDNN) and Fitbit's (RMSSD, during sleep) are different measures, so each is drawn in its own colour, the line breaks at the switch, and the card's numbers and its 30-day average use only the device worn now. The two series stay separate in the data (`hrv`, `hrvRmssd`); the Overview board keeps an "HRV (Fitbit)" row.
+- **Exercise minutes**: the same treatment for the Apple Watch's exercise minutes and Fitbit's **Active Zone Minutes** (minutes in its fat-burn, cardio and peak zones): one card, two colours, never compared. The data keeps `exercise` and `azm` apart; the Overview board and the Activity summary show Active Zone Minutes.
 - **HRV against your normal**: each night's HRV as a percentage above or below the median of the 60 nights before it, on the same device only, from 14 nights in. The one HRV line that runs across a change of device.
-- **Skin temperature** (against Google's baseline), **blood oxygen**, **Active Zone Minutes**, Fitbit workouts, sleep stages (Fitbit's light sleep is shown as core).
-- What the existing charts need to carry on after the switch: the day's **heart-rate range** (low, average, high), **active energy**, and **irregular rhythm (AFib) notifications**.
+- **Skin temperature** (against Google's baseline), **blood oxygen**, Fitbit workouts, sleep stages (Fitbit's light sleep is shown as core).
+- What the existing charts need to carry on after the switch: the day's **heart-rate range** (low, average, high), **active energy**, **resting energy** (Google's total calories for the day minus active energy), and **irregular rhythm (AFib) notifications**.
 - **Air and weather where you live**: PM2.5 and outdoor temperature over the hours you slept (from the band's sleep times), the day's worst hour on the US AQI, the day's high. City-scale model estimates, not room sensors.
 
 Rules: the Fitbit era starts on the first day the band recorded its own readings (Google's VO₂ max estimate is labelled Fitbit even before, so it does not count, and is kept weekly or when it changes). Google's copies of Apple Health data (`HEALTH_KIT`) are ignored. On days both have, the vault wins.

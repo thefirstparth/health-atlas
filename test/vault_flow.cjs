@@ -55,9 +55,19 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
     ok(cols && cols.length >= 2, 'HRV drawn in two colours: ' + (cols || []).join(' '));
   }
   await ch(p, 'Activity');
-  ok((await cardTitles(p)).some(x => /Active Zone Minutes/.test(x)), 'Activity: Active Zone Minutes');
+  {
+    // exercise minutes (Apple) and Active Zone Minutes (Fitbit): one card, each device in its own colour
+    t = await cardTitles(p);
+    ok(t.some(x => /^Exercise minutes/.test(x)) && !t.some(x => /Active Zone Minutes/.test(x)), 'Activity: one Exercise minutes card, no separate Active Zone Minutes card: ' + t.join(' | '));
+    const card = await p.$('.card:has(h3:text-is("Exercise minutes"))');
+    const lg = card && await card.$eval('.legend', e => e.textContent);
+    ok(/Apple Watch \(exercise minutes\)/.test(lg) && /Fitbit \(Active Zone Minutes\)/.test(lg), 'its legend names both devices: ' + lg);
+  }
   await p.click('#views button:text-is("M")'); await p.waitForTimeout(300);
-  ok((await cardTitles(p)).some(x => /^Active energy/.test(x)), 'Activity: active energy carries on in the Fitbit month');
+  t = await cardTitles(p); txt = await p.textContent('.stack');
+  ok(t.some(x => /^Active energy/.test(x)), 'Activity: active energy carries on in the Fitbit month');
+  ok(t.some(x => /^Exercise minutes/.test(x)) && !/Not recorded[^.]*Exercise minutes/.test(txt), 'Activity: exercise minutes carry on in the Fitbit month');
+  ok(t.some(x => /^Resting energy/.test(x)) && !/Not recorded[^.]*Resting energy/.test(txt), 'Activity: resting energy carries on in the Fitbit month');
   await ch(p, 'Heart');
   t = await cardTitles(p);
   ok(t.some(x => /^Heart rate$/.test(x)) && !/Not recorded[^.]*Heart rate[,.]/.test(await p.textContent('.stack')), 'Heart: the day’s heart-rate range carries on in the Fitbit month: ' + t.join(' | '));
