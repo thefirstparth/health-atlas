@@ -37,12 +37,13 @@ if (OPT.people && OPT.people.length > 1) {
   const sources = {}; ppl.forEach(x => Object.assign(sources, x.data.meta.sources || {}));
   D = { meta: { start, end, days: n, sources, exportDate: null, compare: true }, daily: {}, points: {}, workouts: [] };
 } else D = prepareData(D, OPT);
-// One HRV card across a change of device: Apple Watch HRV (SDNN) before the switch, the vault's Fitbit HRV
-// (RMSSD) after. Only a display series: the stored data keeps them apart, and everything computed from it
-// (averages, comparisons, trend, records) stays within one device and is drawn in that device's colour.
-if (!PEOPLE && D.daily.hrvRmssd) {
-  const R = D.daily.hrvRmssd, A = D.daily.hrv || [], f0 = R.findIndex(v => v != null);
-  if (f0 >= 0) D = { ...D, daily: { ...D.daily, hrvAll: R.map((v, i) => i >= f0 ? v : (A[i] ?? null)) } };
+// One card across a change of device for measures the two devices take differently: the Apple Watch's
+// series before the vault's Fitbit series starts, the Fitbit's after (HRV: SDNN then RMSSD; exercise minutes
+// then Active Zone Minutes). Only display series: the stored data keeps them apart, and everything computed
+// from them (averages, comparisons, trend, records) stays within one device and is drawn in that device's colour.
+if (!PEOPLE) for (const [key, apple, fitbit] of [['hrvAll', 'hrv', 'hrvRmssd'], ['exAll', 'exercise', 'azm']]) {
+  const R = D.daily[fitbit], A = D.daily[apple] || [], f0 = R ? R.findIndex(v => v != null) : -1;
+  if (f0 >= 0) D = { ...D, daily: { ...D.daily, [key]: R.map((v, i) => i >= f0 ? v : (A[i] ?? null)) } };
 }
 const AC = new AbortController(), SIG = { signal: AC.signal };
 const TG = { ...DEFAULT_TARGETS, ...(OPT.targets || {}) }, IMP = OPT.units === 'imperial';
@@ -249,12 +250,13 @@ const DEF = {
   sl_deep: { t: 'Deep sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-deep', ex: 'The most physically restorative stage. Usually 10 to 25% of the night; it declines naturally with age.' },
   sl_rem: { t: 'REM sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-rem', ex: 'The stage linked with memory and dreaming. Usually 20 to 25% of the night.' },
   sl_mid: { t: 'Midpoint of sleep', u: 'clock', k: 'line', dir: 0, night: true, ex: 'Halfway between falling asleep and waking up.' },
-  hrvAll: { t: 'Heart rate variability', u: 'ms', k: 'line', dir: 1, byDevice: true, ex: 'Tiny variation in the time between heartbeats; higher usually means better recovered. Apple Watch measures it as SDNN and Fitbit as RMSSD, different measures, so each device has its own colour and its own averages, and they are never compared. HRV against your normal puts both on one scale.' },
+  hrvAll: { t: 'Heart rate variability', u: 'ms', k: 'line', dir: 1, byDevice: { 'Apple Watch': 'SDNN', Fitbit: 'RMSSD' }, ex: 'Tiny variation in the time between heartbeats; higher usually means better recovered. Apple Watch measures it as SDNN and Fitbit as RMSSD, different measures, so each device has its own colour and its own averages, and they are never compared. HRV against your normal puts both on one scale.' },
   // only from a health vault (src/vault.js); hidden for everyone else
   hrvRmssd: { t: 'HRV (Fitbit)', u: 'ms', k: 'line', dir: 1, ex: 'Heart rate variability as Fitbit measures it during sleep (RMSSD). Apple Watch uses a different measure (SDNN), so the two never share a line: HRV against your normal puts both on one scale.' },
   hrvRel: { t: 'HRV against your normal', u: 'rel', k: 'line', dir: 1, ex: 'Each night’s HRV above or below the median of your previous 60 nights on the same device. Apple Watch and Fitbit read differently, but the change from your own normal can be followed across both. Starts after 14 nights on a device.' },
   skinTemp: { t: 'Skin temperature', u: 'dc', k: 'line', dir: 0, ex: 'Night-time skin temperature against your own baseline, from the Fitbit. A rise that lasts a few nights can come with illness, a warm room or a late meal.' },
   spo2: { t: 'Blood oxygen', u: 'pctv', k: 'line', dir: 0, ex: 'Average oxygen saturation while you sleep. 95 to 100% is typical; a steady number is normal.' },
+  exAll: { t: 'Exercise minutes', u: 'min', k: 'bar', dir: 1, target: TG.exercise, byDevice: { 'Apple Watch': 'exercise minutes', Fitbit: 'Active Zone Minutes' }, ex: 'Minutes at brisk-walk intensity or harder. Apple Watch counts exercise minutes and Fitbit counts Active Zone Minutes (its fat-burn, cardio and peak heart-rate zones), different counts, so each device has its own colour and its own averages, and they are never compared. Common guidance is 150 a week, about 22 a day.' },
   azm: { t: 'Active Zone Minutes', u: 'min', k: 'bar', dir: 1, ex: 'Fitbit’s minutes in its fat-burn, cardio and peak heart-rate zones.' },
   pm25Night: { t: 'Air while you slept (PM2.5)', u: 'ugm3', k: 'line', dir: -1, color: '--c-env', ex: 'Fine particles in the outdoor air over the hours you slept (from the band’s sleep times; 22:00 to 06:00 on nights it did not record), where you live. A city-scale air model (about 45 km), not a sensor in your room. The WHO guideline is 15 µg/m³ as a daily average.' },
   aqiMax: { t: 'Air quality, worst hour', u: 'aqi', k: 'line', dir: -1, color: '--c-env', ex: 'The day’s worst hour on the US Air Quality Index, outdoors where you live. Up to 50 is good; over 100 is unhealthy for sensitive groups.' },
@@ -290,7 +292,7 @@ const CH = [
     cards: vk([...(D.daily.hrvAll ? ['hrvAll'] : ['hrv', 'hrvRmssd']), 'hrvRel', 'rhr', 'resp', 'skinTemp', 'spo2', 'mindful']) },
   { id: 'sleep', name: 'Sleep', color: '--c-sleep', desc: 'How long you slept, how that sleep was made up, and when it happened. Each night is dated by the morning you woke up.', custom: 'sleep' },
   { id: 'activity', name: 'Activity', color: '--c-activity', desc: 'Rings, steps, energy and distance.', custom: 'activity',
-    cards: vk(['steps', 'active', 'exercise', 'azm', 'stand', 'distance', 'flights', 'basal', 'cycling']) },
+    cards: vk(['steps', 'active', ...(D.daily.exAll ? ['exAll'] : ['exercise', 'azm']), 'stand', 'distance', 'flights', 'basal', 'cycling']) },
   { id: 'workouts', name: 'Workouts', color: '--c-workouts', desc: 'Every recorded workout, by sport.', custom: 'workouts' },
   { id: 'mobility', name: 'Mobility', color: '--c-mobility', desc: 'How you walk, climb stairs and run, measured in the background by iPhone and Apple Watch.',
     cards: ['walkSpeed', 'stepLen', 'doubleSupport', 'asymmetry', 'steadiness', 'sixMin', 'stairUp', 'stairDown', { sec: 'Running form' }, 'runSpeed', 'runPower', 'runGct', 'runVo', 'runStride'] },
@@ -732,7 +734,7 @@ function drawTrend(box, def, view, p, color) {
   if (isBar) {
     ctx.forEach(c => {
       const cx = F.x((c.s + c.e) / 2), bw = Math.max(2, Math.min(22, F.pxDay * (c.e - c.s + 1) * .62));
-      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && !r && c.v < tgt ? bad : color, 'fill-opacity': faint, class: 'grow' }, F.g);
+      if (c.v != null && c.v > 0) sv('path', { d: barPath(cx, F.base, F.y(c.v), bw), fill: tgt != null && !r && c.v < tgt ? bad : colorAt(c.e), 'fill-opacity': faint, class: 'grow' }, F.g);
       targets.push({ x: cx, c, ty: c.v != null ? F.y(c.v) : F.base });
     });
   } else {
@@ -771,7 +773,7 @@ function drawTrend(box, def, view, p, color) {
 function trendLegend(info, color, def, view) {
   const items = [];
   // by-device measures: one entry per device, with the measure each one takes
-  if (info.eras && info.eras.length && SW.length) for (const k of info.eras) { const n = ERAS[k].name; items.push({ t: `${n}${/watch/i.test(n) ? ' (SDNN)' : /fitbit/i.test(n) ? ' (RMSSD)' : ''}`, c: info.colorAt(ERAS[k].a), cls: info.r ? 'ln' : '' }); }
+  if (info.eras && info.eras.length && SW.length) for (const k of info.eras) { const n = ERAS[k].name, m = def.byDevice[n]; items.push({ t: m ? `${n} (${m})` : n, c: info.colorAt(ERAS[k].a), cls: info.r ? 'ln' : '' }); }
   else {
   if (info.r) items.push({ t: `Trend, ${VC[view].tn}`, c: color, cls: 'ln' });
   if (def.k !== 'count') items.push({ t: CTXNAME[info.ctx], c: color, op: info.r ? .35 : 1 });
@@ -1561,7 +1563,7 @@ function recordsCard(root) {
 }
 
 // ---------------- Chapter vital signs: last 30 days, with the last 90 days as a small trend
-const VITALS = { heart: ['rhr', 'walkHr', 'vo2max'], stress: [HAS('hrvRmssd') ? 'hrvRmssd' : 'hrv', 'rhr', 'resp'], sleep: ['sl_asleep', 'sl_mid', 'sl_deep'], activity: ['steps', 'active', 'exercise'], workouts: ['_workouts'], mobility: ['walkSpeed', 'stepLen', 'steadiness'], env: ['daylight', 'envDb', 'phoneDb'], body: ['weight'] };
+const VITALS = { heart: ['rhr', 'walkHr', 'vo2max'], stress: [HAS('hrvRmssd') ? 'hrvRmssd' : 'hrv', 'rhr', 'resp'], sleep: ['sl_asleep', 'sl_mid', 'sl_deep'], activity: ['steps', 'active', HAS('azm') ? 'azm' : 'exercise'], workouts: ['_workouts'], mobility: ['walkSpeed', 'stepLen', 'steadiness'], env: ['daylight', 'envDb', 'phoneDb'], body: ['weight'] };
 function vitalsRow(chId, e, color) {
   const keys = (VITALS[chId] || []).filter(k => k === '_workouts' ? WK.length : k in DEF && ((DEF[k].k === 'points' ? (PTS[k] || []).length : win(k, 0, LAST).n)));
   if (!keys.length) return null;
@@ -1642,7 +1644,7 @@ function renderPoster(year, themeName) {
 
 // ---------------- Overview board
 const BOARD = [
-  ['activity', ['steps', 'active', 'exercise', 'distance']],
+  ['activity', ['steps', 'active', 'exercise', 'azm', 'distance']],
   ['workouts', ['_workouts']],
   ['heart', ['rhr', 'walkHr', 'vo2max']],
   ['stress', ['hrv', 'hrvRmssd', 'resp', 'skinTemp']],
