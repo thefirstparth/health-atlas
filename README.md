@@ -97,7 +97,7 @@ Open it with **Keep a health vault? Open it** on the home page, or **Open your h
 
 What it adds, only for datasets that have it (nobody else sees these, not even as "not recorded"):
 
-- **HRV (Fitbit)**: Fitbit's own HRV, RMSSD during sleep. It is never written into the Apple HRV series (SDNN): different measures.
+- **Heart rate variability**: one card for both devices. The Apple Watch's HRV (SDNN) and Fitbit's (RMSSD, during sleep) are different measures, so each is drawn in its own colour, the line breaks at the switch, and the card's numbers and its 30-day average use only the device worn now. The two series stay separate in the data (`hrv`, `hrvRmssd`); the Overview board keeps an "HRV (Fitbit)" row.
 - **HRV against your normal**: each night's HRV as a percentage above or below the median of the 60 nights before it, on the same device only, from 14 nights in. The one HRV line that runs across a change of device.
 - **Skin temperature** (against Google's baseline), **blood oxygen**, **Active Zone Minutes**, Fitbit workouts, sleep stages (Fitbit's light sleep is shown as core).
 - What the existing charts need to carry on after the switch: the day's **heart-rate range** (low, average, high), **active energy**, and **irregular rhythm (AFib) notifications**.

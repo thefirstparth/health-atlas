@@ -37,6 +37,13 @@ if (OPT.people && OPT.people.length > 1) {
   const sources = {}; ppl.forEach(x => Object.assign(sources, x.data.meta.sources || {}));
   D = { meta: { start, end, days: n, sources, exportDate: null, compare: true }, daily: {}, points: {}, workouts: [] };
 } else D = prepareData(D, OPT);
+// One HRV card across a change of device: Apple Watch HRV (SDNN) before the switch, the vault's Fitbit HRV
+// (RMSSD) after. Only a display series: the stored data keeps them apart, and everything computed from it
+// (averages, comparisons, trend, records) stays within one device and is drawn in that device's colour.
+if (!PEOPLE && D.daily.hrvRmssd) {
+  const R = D.daily.hrvRmssd, A = D.daily.hrv || [], f0 = R.findIndex(v => v != null);
+  if (f0 >= 0) D = { ...D, daily: { ...D.daily, hrvAll: R.map((v, i) => i >= f0 ? v : (A[i] ?? null)) } };
+}
 const AC = new AbortController(), SIG = { signal: AC.signal };
 const TG = { ...DEFAULT_TARGETS, ...(OPT.targets || {}) }, IMP = OPT.units === 'imperial';
 const DAY = 864e5;
@@ -242,6 +249,7 @@ const DEF = {
   sl_deep: { t: 'Deep sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-deep', ex: 'The most physically restorative stage. Usually 10 to 25% of the night; it declines naturally with age.' },
   sl_rem: { t: 'REM sleep', u: 'dur', k: 'bar', dir: 0, night: true, color: '--st-rem', ex: 'The stage linked with memory and dreaming. Usually 20 to 25% of the night.' },
   sl_mid: { t: 'Midpoint of sleep', u: 'clock', k: 'line', dir: 0, night: true, ex: 'Halfway between falling asleep and waking up.' },
+  hrvAll: { t: 'Heart rate variability', u: 'ms', k: 'line', dir: 1, byDevice: true, ex: 'Tiny variation in the time between heartbeats; higher usually means better recovered. Apple Watch measures it as SDNN and Fitbit as RMSSD, different measures, so each device has its own colour and its own averages, and they are never compared. HRV against your normal puts both on one scale.' },
   // only from a health vault (src/vault.js); hidden for everyone else
   hrvRmssd: { t: 'HRV (Fitbit)', u: 'ms', k: 'line', dir: 1, ex: 'Heart rate variability as Fitbit measures it during sleep (RMSSD). Apple Watch uses a different measure (SDNN), so the two never share a line: HRV against your normal puts both on one scale.' },
   hrvRel: { t: 'HRV against your normal', u: 'rel', k: 'line', dir: 1, ex: 'Each night’s HRV above or below the median of your previous 60 nights on the same device. Apple Watch and Fitbit read differently, but the change from your own normal can be followed across both. Starts after 14 nights on a device.' },
@@ -279,7 +287,7 @@ const CH = [
   { id: 'heart', name: 'Heart', color: '--c-heart', desc: 'Heart rate through the day, at rest and while walking, with cardio fitness and recovery readings.',
     cards: vk([{ range: true }, 'rhr', 'walkHr', 'vo2max', 'hrRecovery', 'highHr', 'irregular']) },
   { id: 'stress', name: 'Stress & Recovery', color: '--c-stress', desc: 'The signals that reflect how rested your body is: heart rate variability, resting heart rate and breathing during sleep.',
-    cards: vk(['hrv', 'hrvRmssd', 'hrvRel', 'rhr', 'resp', 'skinTemp', 'spo2', 'mindful']) },
+    cards: vk([...(D.daily.hrvAll ? ['hrvAll'] : ['hrv', 'hrvRmssd']), 'hrvRel', 'rhr', 'resp', 'skinTemp', 'spo2', 'mindful']) },
   { id: 'sleep', name: 'Sleep', color: '--c-sleep', desc: 'How long you slept, how that sleep was made up, and when it happened. Each night is dated by the morning you woke up.', custom: 'sleep' },
   { id: 'activity', name: 'Activity', color: '--c-activity', desc: 'Rings, steps, energy and distance.', custom: 'activity',
     cards: vk(['steps', 'active', 'exercise', 'azm', 'stand', 'distance', 'flights', 'basal', 'cycling']) },
@@ -664,7 +672,8 @@ function declutter(F) {
   const placed = [...pills];
   labs.forEach(t => {
     const lineY = +t.dataset.ly; if (isNaN(lineY)) { placed.push(t.getBBox()); return; }
-    const opts = [[4, lineY - 6, 'start'], [F.pw - 4, lineY - 6, 'end'], [4, lineY + 14, 'start'], [F.pw - 4, lineY + 14, 'end']];
+    const lx = (+t.dataset.lx || 0) + 4; // a line that starts part-way (at a device switch) keeps its label on the line
+    const opts = [[lx, lineY - 6, 'start'], [F.pw - 4, lineY - 6, 'end'], [lx, lineY + 14, 'start'], [F.pw - 4, lineY + 14, 'end']];
     for (const [x, y, a] of opts) { t.setAttribute('x', x); t.setAttribute('y', y); t.setAttribute('text-anchor', a); const bb = t.getBBox(); if (!placed.some(p => hit(bb, p))) break; }
     placed.push(t.getBBox());
   });
@@ -673,7 +682,7 @@ function declutter(F) {
 // falling back to a tighter format, so every value fits its cell and nothing is clipped.
 function strip(F, view, p, valFn, fmts, color, label) {
   const bks = buckets(VC[view].strip, p.a, p.b);
-  const cells = bks.map(bk => ({ x0: F.x(bk.s) - F.pxDay / 2, x1: F.x(bk.e) + F.pxDay / 2, v: bk.s > LAST ? null : valFn(bk.s, Math.min(bk.e, LAST)) }));
+  const cells = bks.map(bk => ({ bk, x0: F.x(bk.s) - F.pxDay / 2, x1: F.x(bk.e) + F.pxDay / 2, v: bk.s > LAST ? null : valFn(bk.s, Math.min(bk.e, LAST)) }));
   const nn = cells.filter(c => c.v != null); if (!nn.length) return;
   const lo = Math.min(...nn.map(c => c.v)), hi = Math.max(...nn.map(c => c.v)), y0 = F.stripY, hh = STRIP_H - 6;
   let pick = null;
@@ -685,7 +694,7 @@ function strip(F, view, p, valFn, fmts, color, label) {
   cells.forEach(c => {
     if (c.v == null) return;
     const t = hi > lo ? (c.v - lo) / (hi - lo) : .5, w = c.x1 - c.x0;
-    sv('rect', { class: 'stripel', x: c.x0 + 1.5, y: y0, width: Math.max(0, w - 3), height: hh, rx: 7, fill: color, 'fill-opacity': (0.07 + 0.2 * t).toFixed(3) }, F.g);
+    sv('rect', { class: 'stripel', x: c.x0 + 1.5, y: y0, width: Math.max(0, w - 3), height: hh, rx: 7, fill: typeof color === 'function' ? color(c.bk) : color, 'fill-opacity': (0.07 + 0.2 * t).toFixed(3) }, F.g);
     if (pick) { const tx = sv('text', { x: (c.x0 + c.x1) / 2, y: y0 + hh / 2 + pick.fs * .36, 'text-anchor': 'middle', fill: css('--ink'), style: `font:${pick.font};font-variant-numeric:tabular-nums` }, F.g); tx.textContent = pick.f(c.v); }
   });
   const lt = sv('text', { x: F.W - 1, y: y0 + hh / 2 + 3.5, class: 'stripl', 'text-anchor': 'end' }, F.g); lt.textContent = label || STRIPNAME[VC[view].strip];
@@ -705,11 +714,15 @@ function legend(items) {
 // ---------------- generic chart for bar / line / count metrics
 function drawTrend(box, def, view, p, color) {
   const cfg = VC[view], e = Math.min(p.b, LAST), isCount = def.k === 'count', isBar = def.k === 'bar' || isCount;
-  const agg = (s, b) => { const r = win(def.key, s, b); return isCount ? (r.n ? r.sum : null) : r.v; };
+  // by-device measures: each device in its own colour, and a week or month that spans the switch shows the newer device only
+  const color2 = css('--c-dev2'), colorAt = i => def.byDevice && era(Math.min(Math.max(i, 0), LAST)) % 2 ? color2 : color;
+  const agg = (s, b) => { if (def.byDevice && b >= 0 && era(Math.max(s, 0)) !== era(Math.min(b, LAST))) s = eraStart(Math.min(b, LAST)); const r = win(def.key, s, b); return isCount ? (r.n ? r.sum : null) : r.v; };
   const ctx = buckets(cfg.ctx, p.a, p.b).map(bk => ({ ...bk, v: bk.s > LAST ? null : agg(bk.s, Math.min(bk.e, LAST)), n: win(def.key, bk.s, bk.e).n }));
   const r = isCount ? 0 : cfg.r, T = r ? trend(def.key, r) : null;
   const tl = []; if (T) for (let i = Math.max(p.a, 0); i <= e; i++) tl.push({ i, v: T[i] });
-  const base30 = !r && !isCount ? win(def.key, e - 29, e).v : null;
+  // the 30-day average never reaches back across a change of device, and its line starts at the switch
+  const b30 = devDep(def.key) ? Math.max(e - 29, eraStart(e)) : e - 29;
+  const base30 = !r && !isCount ? win(def.key, b30, e).v : null;
   let goal = null; if (def.goal) for (let i = Math.max(p.a, 0); i <= e; i++) { const g = get(def.goal, i); if (g != null) goal = g; }
   const tgt = def.target != null ? def.target : null, bad = css('--bad');
   const vals = [...ctx.map(c => c.v), ...tl.map(t => t.v), base30, goal, tgt, def.floor];
@@ -724,34 +737,46 @@ function drawTrend(box, def, view, p, color) {
     });
   } else {
     const pts = ctx.map(c => c.v == null ? null : [F.x((c.s + c.e) / 2), F.y(c.v)]);
-    if (!r) runs(pts, 2).forEach(rr => rr.length > 1 && sv('path', { d: smooth(rr), fill: 'none', stroke: color, 'stroke-width': 1.75, 'stroke-opacity': .5, class: 'draw' }, F.g));
+    // connecting lines never join two devices
+    const eraOf = c => devDep(def.key) ? era(Math.min(Math.max(c.e, 0), LAST)) : 0;
+    if (!r) for (const k of new Set(ctx.map(eraOf))) runs(pts.map((pt, j) => eraOf(ctx[j]) === k ? pt : null), 2).forEach(rr => rr.length > 1 && sv('path', { d: smooth(rr), fill: 'none', stroke: colorAt(eraStart(Math.min(Math.max(ctx.find(c => eraOf(c) === k).e, 0), LAST))), 'stroke-width': 1.75, 'stroke-opacity': .5, class: 'draw' }, F.g));
     const surf = css('--card');
-    pts.forEach(pt => pt && sv('circle', { cx: pt[0], cy: pt[1], r: r ? (cfg.ctx === 'day' ? 2.6 : 3) : 4.5, fill: color, 'fill-opacity': r ? .32 : 1, stroke: r ? 'none' : surf, 'stroke-width': 2, class: 'draw' }, F.g));
+    pts.forEach((pt, j) => pt && sv('circle', { cx: pt[0], cy: pt[1], r: r ? (cfg.ctx === 'day' ? 2.6 : 3) : 4.5, fill: colorAt(ctx[j].e), 'fill-opacity': r ? .32 : 1, stroke: r ? 'none' : surf, 'stroke-width': 2, class: 'draw' }, F.g));
     ctx.forEach(c => targets.push({ x: F.x((c.s + c.e) / 2), c, ty: c.v != null ? F.y(c.v) : null }));
   }
   const refs = [];
   if (goal != null) refs.push([goal, 'Goal ' + U[def.u].c(goal)]);
   if (tgt != null) refs.unshift([tgt, 'Target ' + U[def.u].c(tgt)]);
-  if (base30 != null) refs.push([base30, '30-day avg ' + U[def.u].c(base30)]);
-  refs.forEach(([v, txt], k) => { const gy = F.y(v); sv('line', { class: 'refline', x1: 0, x2: F.pw, y1: gy, y2: gy }, F.g); const t = sv('text', { class: 'reflab halo', x: k ? F.pw - 4 : 4, y: gy - 6, 'text-anchor': k ? 'end' : 'start' }, F.g); t.textContent = txt; t.dataset.ly = gy; });
-  if (T) { const lr = [...tl].reverse().find(t => t.v != null); trendLine(F, tl.map(t => t.v == null ? null : [F.x(t.i), F.y(t.v)]), color, lr ? U[def.u].c(lr.v) : null, tgt != null ? F.y(tgt) : null); }
+  if (base30 != null) refs.push([base30, '30-day avg ' + U[def.u].c(base30), b30 > p.a ? Math.max(0, F.x(b30) - F.pxDay / 2) : 0]);
+  refs.forEach(([v, txt, x0 = 0], k) => { const gy = F.y(v); sv('line', { class: 'refline', x1: x0, x2: F.pw, y1: gy, y2: gy }, F.g); const t = sv('text', { class: 'reflab halo', x: k ? F.pw - 4 : x0 + 4, y: gy - 6, 'text-anchor': k ? 'end' : 'start' }, F.g); t.textContent = txt; t.dataset.ly = gy; t.dataset.lx = x0; });
+  if (T) {
+    const lr = [...tl].reverse().find(t => t.v != null), xy = t => t.v == null ? null : [F.x(t.i), F.y(t.v)];
+    // by-device measures: one trend line per device, in its colour; the label goes on the newest
+    if (def.byDevice) { const ks = [...new Set(tl.map(t => era(t.i)))]; ks.forEach(k => trendLine(F, tl.map(t => era(t.i) === k ? xy(t) : null), colorAt(eraStart(tl.find(t => era(t.i) === k).i)), k === ks[ks.length - 1] && lr ? U[def.u].c(lr.v) : null, null)); }
+    else trendLine(F, tl.map(xy), color, lr ? U[def.u].c(lr.v) : null, tgt != null ? F.y(tgt) : null);
+  }
   F.g.querySelectorAll('.reflab').forEach(t => F.g.appendChild(t)); declutter(F);
   const stripVals = buckets(cfg.strip, p.a, p.b).map(bk => bk.s > LAST ? null : agg(bk.s, Math.min(bk.e, LAST)));
-  strip(F, view, p, agg, def.u === 'clock' ? clockFmts(stripVals) : fmtsFor(def.u), color, isCount ? 'TOTAL' : null);
+  strip(F, view, p, agg, def.u === 'clock' ? clockFmts(stripVals) : fmtsFor(def.u), def.byDevice ? bk => colorAt(bk.e) : color, isCount ? 'TOTAL' : null);
   hoverLayer(F, targets, (t, cx, cy) => {
     const c = t.c, rw = [];
     const lab = isCount ? 'total' : (cfg.ctx === 'day' ? (def.night ? 'that night' : 'that day') : (cfg.ctx === 'week' ? 'weekly avg' : 'monthly avg'));
-    rw.push(c.v == null ? { v: 'No data' } : { v: fmt(def.u, c.v), l: lab, c: color, faint: !!r });
-    if (T && c.s <= LAST) { const tv = T[Math.min(Math.round((c.s + c.e) / 2), e)]; if (tv != null) rw.push({ v: fmt(def.u, tv), l: 'trend', c: color }); }
+    rw.push(c.v == null ? { v: 'No data' } : { v: fmt(def.u, c.v), l: lab + (def.byDevice && SW.length ? `, ${ERAS[era(Math.min(c.e, LAST))].name}` : ''), c: colorAt(c.e), faint: !!r });
+    if (T && c.s <= LAST) { const tv = T[Math.min(Math.round((c.s + c.e) / 2), e)]; if (tv != null) rw.push({ v: fmt(def.u, tv), l: 'trend', c: colorAt(c.e) }); }
     showTip(cx, cy, bucketLabel(c, cfg.ctx), rw, c.v != null && cfg.ctx !== 'day' && !isCount ? `${c.n} ${def.night ? 'night' : 'day'}${c.n === 1 ? '' : 's'} with data` : null);
   });
-  return { r, base30: base30 != null, goal: goal != null, ctx: cfg.ctx, target: tgt != null };
+  const eras = def.byDevice ? [...new Set(ctx.filter(c => c.v != null).map(c => era(Math.min(c.e, LAST))))] : null;
+  return { r, base30: base30 != null, goal: goal != null, ctx: cfg.ctx, target: tgt != null, eras, colorAt };
 }
 function trendLegend(info, color, def, view) {
   const items = [];
+  // by-device measures: one entry per device, with the measure each one takes
+  if (info.eras && info.eras.length && SW.length) for (const k of info.eras) { const n = ERAS[k].name; items.push({ t: `${n}${/watch/i.test(n) ? ' (SDNN)' : /fitbit/i.test(n) ? ' (RMSSD)' : ''}`, c: info.colorAt(ERAS[k].a), cls: info.r ? 'ln' : '' }); }
+  else {
   if (info.r) items.push({ t: `Trend, ${VC[view].tn}`, c: color, cls: 'ln' });
   if (def.k !== 'count') items.push({ t: CTXNAME[info.ctx], c: color, op: info.r ? .35 : 1 });
   else items.push({ t: info.ctx === 'day' ? 'Each day' : info.ctx === 'week' ? 'Weekly total' : 'Monthly total', c: color });
+  }
   if (info.base30) items.push({ t: 'Average of the last 30 days', cls: 'hl' });
   if (info.goal) items.push({ t: 'Ring goal', cls: 'hl' });
   if (info.target) items.push({ t: 'Target', cls: 'hl' }, { t: info.r ? 'Trend below target' : 'Below target', c: css('--bad'), cls: info.r ? 'ln' : '' });
@@ -799,8 +824,9 @@ const dateShort = (i, view) => dShort(i) + (view === 'All' || view === '6M' ? ',
 function windowRows(def, e, isCount) {
   const out = [], f = (a, b) => { const r = win(def.key, a, b); return isCount ? r.sum : r.v; };
   for (const n of [30, 90]) {
-    const cur = win(def.key, e - n + 1, e); if (!cur.n && !isCount) continue;
-    const v = f(e - n + 1, e), prevN = win(def.key, e - 2 * n + 1, e - n).n, pv = prevN || isCount ? f(e - 2 * n + 1, e - n) : null;
+    const w0 = def.byDevice ? Math.max(e - n + 1, eraStart(e)) : e - n + 1;
+    const cur = win(def.key, w0, e); if (!cur.n && !isCount) continue;
+    const v = f(w0, e), prevN = win(def.key, e - 2 * n + 1, e - n).n, pv = prevN || isCount ? f(e - 2 * n + 1, e - n) : null;
     const same = oneDevice(def.key, e - 2 * n + 1, e), info = same ? deltaInfo(def.u, def.dir, v, pv) : NEWDEV;
     out.push({ l: `Last ${n} ${def.night ? 'nights' : 'days'}${isCount ? ', total' : ''}`, v: F1(def.u, v), x: info ? chipEl(info, same ? `vs the ${n} ${def.night ? 'nights' : 'days'} before: ${fmt(def.u, pv)}` : `Not compared: the ${n} ${def.night ? 'nights' : 'days'} before were recorded by another device`) : '' });
   }
@@ -811,22 +837,24 @@ function metricBand(defIn, view, p, chColor) {
   const def = typeof defIn === 'string' ? DEF[defIn] : { ...DEF[defIn.key], ...defIn };
   const color = css(def.color || chColor);
   if (def.k === 'points') return pointsBand(def, view, p, color);
-  const e = Math.min(p.b, LAST), isCount = def.k === 'count', cur = win(def.key, p.a, e);
+  const e = Math.min(p.b, LAST), isCount = def.k === 'count';
+  // a measure two devices take differently: when the period spans the switch, its numbers use the current device only
+  const a0 = def.byDevice && era(Math.max(p.a, 0)) !== era(e) ? eraStart(e) : p.a, cur = win(def.key, a0, e);
   if (!cur.n) return { missing: def.t, key: def.key };
   const B = band(def, color);
   const pp = prevPeriod(view, p), v = isCount ? cur.sum : cur.v;
   let pv = null; if (pp) { const r = win(def.key, pp.a, pp.b); pv = isCount ? r.sum : r.v; }
-  const lab = isCount ? 'Total' : def.night ? 'Average per night' : def.k === 'bar' ? 'Daily average' : 'Average';
+  const lab = (isCount ? 'Total' : def.night ? 'Average per night' : def.k === 'bar' ? 'Daily average' : 'Average') + (a0 !== p.a ? `, ${ERAS[era(e)].name}` : '');
   hero(B.rail, lab, F1(def.u, v), ...vsPrev(def.key, pp, e, pp ? deltaInfo(def.u, def.dir, v, pv) : null));
   const list = windowRows(def, e, isCount);
   if (!def.night && def.k === 'bar' && ['km', 'mi', 'min', 'floors'].includes(def.u) && view !== 'W') list.push({ l: 'Total in period', v: F1(def.u, cur.sum), x: '' });
   if (!isCount && cur.n > 1) {
-    const x = extremes(def.key, p.a, e), clk = def.u === 'clock';
+    const x = extremes(def.key, a0, e), clk = def.u === 'clock';
     list.push({ l: clk ? 'Earliest' : def.night ? 'Lowest night' : 'Lowest day', v: F1(def.u, x.lo), x: dateShort(x.loI, view) });
     list.push({ l: clk ? 'Latest' : def.night ? 'Highest night' : 'Highest day', v: F1(def.u, x.hi), x: dateShort(x.hiI, view) });
   }
   rows(B.rail, list);
-  B.rail.appendChild(el('div', 'meta', (isCount ? '' : `Recorded on ${cur.n} of ${daysIn(p)} ${def.night ? 'nights' : 'days'}. `) + `Arrows compare with the same number of ${def.night ? 'nights' : 'days'} just before.`));
+  B.rail.appendChild(el('div', 'meta', (isCount ? '' : `Recorded on ${cur.n} of ${a0 !== p.a ? `${e - a0 + 1} ${def.night ? 'nights' : 'days'} on ${ERAS[era(e)].name}` : `${daysIn(p)} ${def.night ? 'nights' : 'days'}`}. `) + `Arrows compare with the same number of ${def.night ? 'nights' : 'days'} just before.`));
   const b = chartBox(), lg = el('div'); B.main.append(b, lg);
   mount(b, bx => { const info = drawTrend(bx, def, view, p, color); lg.replaceChildren(trendLegend(info, color, def, view)); });
   return B.c;
@@ -1132,7 +1160,8 @@ function ringsCard(view, p) {
   return c;
 }
 // ---------------- Calendar grid: every day of a year (Year view) or every year stacked (All time)
-const CAL = { activity: 'steps', sleep: 'sl_asleep', stress: 'hrv', env: 'daylight', heart: 'rhr' };
+// the HRV calendar shades days against each other, so across two devices it uses HRV against your normal
+const CAL = { activity: 'steps', sleep: 'sl_asleep', stress: D.daily.hrvAll ? (D.daily.hrvRel ? 'hrvRel' : null) : 'hrv', env: 'daylight', heart: 'rhr' };
 function mixHex(a, b, t) { const P = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const n = m ? parseInt(m[1], 16) : 0x888888; return [n >> 16, (n >> 8) & 255, n & 255]; }; const A = P(a), B = P(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); }
 function calendarCard(key, view, p, chColor) {
   const def = DEF[key]; if (!def) return null;

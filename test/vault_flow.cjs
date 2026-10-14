@@ -40,12 +40,20 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
   let t = await cardTitles(p);
   await p.click('#views button:text-is("M")'); await p.waitForTimeout(300);
   let txt = await p.textContent('.stack');
-  ok(t.some(x => /HRV \(Fitbit\)/.test(x)) && t.some(x => /HRV against your normal/.test(x)), 'Stress: HRV (Fitbit) and HRV against your normal: ' + t.join(' | '));
+  ok(t.some(x => /^Heart rate variability/.test(x)) && t.some(x => /HRV against your normal/.test(x)), 'Stress: Heart rate variability and HRV against your normal: ' + t.join(' | '));
+  ok(!t.some(x => /HRV \(Fitbit\)/.test(x)), 'Stress: no separate Fitbit HRV card');
   ok(t.some(x => /Skin temperature/.test(x)) && t.some(x => /Blood oxygen/.test(x)), 'Stress: skin temperature and blood oxygen');
-  ok(/Heart rate variability from the Apple Watch ends at the switch .* Fitbit measures it differently/.test(txt), 'Apple HRV: a note at the switch, not "not recorded"');
   ok(!/Not recorded since you switched to Fitbit[^.]*Heart rate variability/.test(txt), 'HRV is not called missing');
   await p.click('#views button:text-is("Y")'); await p.waitForTimeout(300);
   ok(await p.$$eval('.swlab', x => x.some(e => /Fitbit from/.test(e.textContent))), 'the switch is marked on the charts');
+  {
+    // one HRV card: each device in its own colour, its own legend line, the summary from the current device only
+    const card = await p.$('.card:has(h3:text-matches("^Heart rate variability"))');
+    const lg = card && await card.$$eval('.legend, .lg, [class*=leg]', x => x.map(e => e.textContent).join(' '));
+    ok(card && /Apple Watch \(SDNN\)/.test(lg) && /Fitbit \(RMSSD\)/.test(lg), 'HRV legend names both devices: ' + lg);
+    const cols = card && await card.$$eval('svg path, svg polyline, svg circle', x => [...new Set(x.map(e => getComputedStyle(e).stroke).filter(c => c && c !== 'none'))]);
+    ok(cols && cols.length >= 2, 'HRV drawn in two colours: ' + (cols || []).join(' '));
+  }
   await ch(p, 'Activity');
   ok((await cardTitles(p)).some(x => /Active Zone Minutes/.test(x)), 'Activity: Active Zone Minutes');
   await p.click('#views button:text-is("M")'); await p.waitForTimeout(300);
@@ -72,7 +80,7 @@ const cardTitles = p => p.$$eval('.stack h3, .stack .band h3, .stack .ttl', x =>
   await p.click('#setCancel');
   await p.reload(); await p.waitForSelector('#app:not([hidden]) .ch-head');
   await ch(p, 'Stress & Recovery');
-  ok((await cardTitles(p)).some(x => /HRV \(Fitbit\)/.test(x)), 'kept in this browser after a reload');
+  ok((await cardTitles(p)).some(x => /^Heart rate variability/.test(x)), 'kept in this browser after a reload');
 
   // 5. a vault zip chosen with the main button opens the vault dialog, not the export reader
   await p.click('#menuBtn'); await p.click('#addExport');
