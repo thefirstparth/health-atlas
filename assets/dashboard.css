@@ -14,7 +14,7 @@
   --seg:rgba(22,24,29,.06); --seg-on:#FFFFFF; --focus:#2F5BBF; --tip:rgba(255,255,255,.96);
   --good:#1F8A4C; --good-ink:#17703D; --bad:#C8283C; --bad-ink:#A51F31;
   --c-overview:#16181D; --c-heart:#D23F3F; --c-stress:#0E8A8A; --c-sleep:#2F5BBF; --c-activity:#E4691A;
-  --c-workouts:#3A8F3A; --c-mobility:#B8860B; --c-env:#6B7F2A; --c-body:#8A6A4A; --c-daylight:#C99700;
+  --c-workouts:#3A8F3A; --c-mobility:#B8860B; --c-env:#6B7F2A; --c-body:#8A6A4A; --c-daylight:#C99700; --c-dev2:#7550C4;
   --ring-move:#E8174A; --ring-ex:#4DB300; --ring-stand:#00A3C4;
   --st-awake:#E4691A; --st-rem:#4E9FEA; --st-core:#2B63D1; --st-deep:#1F2E86; --st-unspec:#A9B0BB;
   --w-1:#3A8F3A; --w-2:#2F6FD0; --w-3:#E4691A; --w-4:#7C8591;
@@ -33,7 +33,7 @@
     --seg:rgba(255,255,255,.07); --seg-on:#2C2F36; --focus:#5B8CEB; --tip:rgba(30,32,38,.97);
     --good:#2FBF5E; --good-ink:#5FD884; --bad:#FF5A6A; --bad-ink:#FF7A86;
     --c-overview:#F2F3F5; --c-heart:#F0605A; --c-stress:#2EB3B0; --c-sleep:#5B8CEB; --c-activity:#F58537;
-    --c-workouts:#4CB85A; --c-mobility:#D9A52A; --c-env:#9AB04A; --c-body:#B58D66; --c-daylight:#E8BC2E;
+    --c-workouts:#4CB85A; --c-mobility:#D9A52A; --c-env:#9AB04A; --c-body:#B58D66; --c-daylight:#E8BC2E; --c-dev2:#A487EC;
     --ring-move:#FA114F; --ring-ex:#A6FF00; --ring-stand:#00F0FF;
     --st-awake:#F58537; --st-rem:#8FC2FF; --st-core:#4C84EE; --st-deep:#2F48B8; --st-unspec:#5C6573;
     --w-1:#4CB85A; --w-2:#5B8CEB; --w-3:#F58537; --w-4:#8E96A3;
@@ -48,7 +48,7 @@
   --seg:rgba(255,255,255,.07); --seg-on:#2C2F36; --focus:#5B8CEB; --tip:rgba(30,32,38,.97);
   --good:#2FBF5E; --good-ink:#5FD884; --bad:#FF5A6A; --bad-ink:#FF7A86;
   --c-overview:#F2F3F5; --c-heart:#F0605A; --c-stress:#2EB3B0; --c-sleep:#5B8CEB; --c-activity:#F58537;
-  --c-workouts:#4CB85A; --c-mobility:#D9A52A; --c-env:#9AB04A; --c-body:#B58D66; --c-daylight:#E8BC2E;
+  --c-workouts:#4CB85A; --c-mobility:#D9A52A; --c-env:#9AB04A; --c-body:#B58D66; --c-daylight:#E8BC2E; --c-dev2:#A487EC;
   --ring-move:#FA114F; --ring-ex:#A6FF00; --ring-stand:#00F0FF;
   --st-awake:#F58537; --st-rem:#8FC2FF; --st-core:#4C84EE; --st-deep:#2F48B8; --st-unspec:#5C6573;
   --w-1:#4CB85A; --w-2:#5B8CEB; --w-3:#F58537; --w-4:#8E96A3;
